@@ -1,5 +1,1 @@
-namespace denoiser{
-struct Layer1{
-
-};
-};
+#include "denoiser.h"
