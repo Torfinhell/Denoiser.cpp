@@ -30,7 +30,13 @@
 *.exe
 *.out
 *.app
-dns48-11decc9d8e3f0998.th
 venv
 __pycache__
 models
+vendor
+output
+bashrc
+build
+.cache
+CMakeFiles
+.cmake
