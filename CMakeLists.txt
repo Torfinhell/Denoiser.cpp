@@ -24,5 +24,8 @@ set_property(TARGET example-app PROPERTY CXX_STANDARD 17)
 target_include_directories(example-app PRIVATE ${EIGEN3_INCLUDE_DIR})
 target_include_directories(example-app PRIVATE ${TORCH_INCLUDE_DIRS})
 
+# Add the specific directory for mobile import
+# target_include_directories(example-app PRIVATE "${TORCH_INCLUDE_DIRS}/csrc/jit/mobile")
+
 # Link the Torch libraries
 target_link_libraries(example-app "${TORCH_LIBRARIES}")

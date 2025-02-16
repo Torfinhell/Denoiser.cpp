@@ -1,9 +1,11 @@
+#ifndef TENSOR_HPP
+#define TENSOR_HPP
 
-#pragma once
-#include <Eigen/Dense>
+#include "Eigen/Dense"
 #include <complex>
 #include <iostream>
 #include <string>
+#include <unsupported/Eigen/CXX11/Tensor>
 #include <vector>
 
 namespace Eigen
@@ -25,3 +27,5 @@ typedef Tensor<float, 2> Tensor2dXf;
 typedef Tensor<float, 1> Tensor1dXf;
 typedef Tensor<std::complex<float>, 3> Tensor3dXcf;
 } // namespace Eigen
+
+#endif // TENSOR_HPP

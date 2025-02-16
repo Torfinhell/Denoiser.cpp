@@ -42,3 +42,4 @@ CMakeFiles
 .cmake
 trash
 compile_flags.txt
+tests/test_data/
