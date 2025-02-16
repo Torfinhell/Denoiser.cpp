@@ -40,3 +40,5 @@ build
 .cache
 CMakeFiles
 .cmake
+trash
+compile_flags.txt

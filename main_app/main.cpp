@@ -17,7 +17,7 @@ int main() {
     std::cout << "Model loaded successfully\n";
 
     // Print the model layers and their weights
-    print_model_layers(module);
+    // print_model_layers(module);
 
     return 0;
 }

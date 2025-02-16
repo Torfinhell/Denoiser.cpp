@@ -1,5 +1,6 @@
+#pragma once
 #include <torch/script.h> 
 #include <iostream>
 #include <vector>
 
-void print_model_layers(const torch::jit::script::Module& module);
+void load_tensor(const torch::jit::script::Module& module);

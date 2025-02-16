@@ -13,5 +13,13 @@
                 "CMAKE_BUILD_TYPE": "Debug"
             }
         }
+    ],
+    "buildPresets": [
+        {
+            "name": "Preset Clang-14",
+            "description": "",
+            "displayName": "",
+            "configurePreset": "Clang-14"
+        }
     ]
-}   
+}
