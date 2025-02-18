@@ -5,7 +5,7 @@ struct Layer{
     virtual void forward(){}
     virtual ~Layer(){}
 };
-struct ExampleLayer: public Layer{
+struct SimpleModel: public Layer{
     void forward() override;
-    ~ExampleLayer(){}
+    ~SimpleModel(){}
 };
