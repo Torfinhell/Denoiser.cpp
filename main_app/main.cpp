@@ -1,6 +1,8 @@
+#include "layers.h"
+#include "tensors.h"
 #include "tests.h"
 
-int main() { //for now writing only tests
+int main()
+{
     TestSimpleModel();
-    return 0;
 }
