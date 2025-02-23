@@ -1,82 +1,13 @@
 #include "tests.h"
+#include "layers.h"
 #include "tensors.h"
-#include <ATen/core/TensorBody.h>
 #include <chrono>
-
+#include <iostream>
+#include <unsupported/Eigen/CXX11/Tensor>
+#include<filesystem>
+#include<iostream>
+namespace fs = std::filesystem;
 using namespace Eigen;
-Tensor1dXf TorchToEigen(const torch::Tensor& tensor){
-    Tensor1dXf eigen_tensor(tensor.dim());
-    for(size_t i=0;i<tensor.dim();i++){
-        eigen_tensor(i)=tensor[i].item<float>();
-    }
-    return eigen_tensor;
-}
-// Tensor2dXf JitToEigen(torch::jit::script::Module tensor){
-//     std::vector<int64_t> dimensions = tensor.sizes().vec();
-//     for (const auto& child : module.named_children()) {
-//         std::cout << "Layer: " << child.name << ", Type: " << child.value.type()->str() << std::endl;
-//         for (const auto& param : child.value.named_parameters()) {
-//             std::cout << "  Param: " << param.name << ", Shape: " << param.value.sizes() << std::endl;
-//             std::cout << "    Weights: " << param.value << std::endl;
-//         }
-//         print_model_layers(child.value);
-//     }
-// }
-//maybe create converter class for seversl dimensions(if I do it with templates than to long and I dont want to use recursion)
-//create time wrapper
-void TestSimpleModel(){
-    std::string base_path = "/home/torfinhell/Denoiser.cpp/tests/test_data/SimpleModel";
-    std::string input_path=base_path+"/input.pth";
-    std::string model_path=base_path+"/model.pth";
-    std::string prediction_path=base_path+"/prediction.pth";
-    torch::jit::script::Module prior_input, model, prior_prediction;
-    torch::Tensor input_tensors, prediction_tensors;
-    try {
-        model = torch::jit::load(model_path);
-        prior_input = torch::jit::load(input_path);
-        prior_prediction = torch::jit::load(prediction_path);
-        input_tensors = prior_input.attr("prior").toTensor();
-        prediction_tensors = prior_prediction.attr("prior").toTensor();
-        std::cout << "Model loaded successfully\n";
-    } catch (const c10::Error& e) {
-        std::cerr << "Error loading the model: " << e.what() << "\n";
-    }
-    print_tensor(input_tensors);
-    print_model_layers(model);
-    auto start = std::chrono::high_resolution_clock::now();
-    print_tensor(prediction_tensors);
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = end - start;
-    std::cout << "Time taken for forward pass: " << duration.count() << " ms" << std::endl;
-    // Tensor2dXf weights=JitToEigen(model);
-    start = std::chrono::high_resolution_clock::now();
-    model.forward({input_tensors}).toTensor();
-    end = std::chrono::high_resolution_clock::now();
-    duration = end - start;
-    std::cout << "Time taken for forward pass: " << duration.count() << " ms" << std::endl;
-
-    Eigen::MatrixXd weight(2, 10);
-    weight << -0.0697, -0.1289, -0.1705,  0.2072,  0.3073, -0.2763, -0.0724, -0.2576, 0.1368, 0.2347,
-               0.1622, -0.0272,  0.3017,  0.0532,  0.2130, -0.0723, -0.0887,  0.0306, 0.1020, -0.1697;
-
-    // Define the bias vector (2)
-    Eigen::VectorXd bias(2);
-    bias << 6.1365, -30.7464;
-
-    // Define the input matrix (1x10) for a single sample
-    Eigen::RowVectorXd input(10);
-    input << -0.119387, -0.277944, 0, 0, 0, 0, 0, 0, 0, 0; // Example input
-    start = std::chrono::high_resolution_clock::now();
-    // Perform the matrix multiplication and add the bias
-    Eigen::VectorXd output = (weight * input.transpose()) + bias;
-    end = std::chrono::high_resolution_clock::now();
-    duration = end - start;
-    std::cout << "Time taken for forward pass: " << duration.count() << " ms" << std::endl;
-    std::cout << "Output: " << output.transpose() << std::endl;
-    // Print the output
-
-}
-
 void print_model_layers(const torch::jit::script::Module& module) {
     for (const auto& child : module.named_children()) {
         std::cout << "Layer: " << child.name << ", Type: " << child.value.type()->str() << std::endl;
@@ -102,4 +33,104 @@ void print_tensor(const torch::Tensor& tensor) {
         std::cout << tensor[i].item<float>() << " "; 
     }
     std::cout << std::endl;
+}
+void print_1d_tensor(Tensor1dXf tensor) {
+    std::cout << "Tensor elements (1D): ";
+    for (std::size_t i = 0; i < tensor.dimension(0); ++i) {
+        std::cout << tensor(i) << " ";
+    }
+    std::cout << std::endl;
+}
+
+void print_2d_tensor(Tensor2dXf tensor) {
+    std::cout << "Tensor elements (2D):" << std::endl;
+    for (std::size_t i = 0; i < tensor.dimension(0); ++i) { // Iterate over rows
+        for (std::size_t j = 0; j < tensor.dimension(1); ++j) { // Iterate over columns
+            std::cout << tensor(i, j) << " "; // Print each element
+        }
+        std::cout << std::endl; // New line after each row
+    }
+}
+
+Tensor1dXf TorchToEigen(const torch::Tensor& tensor){
+    Tensor1dXf eigen_tensor(tensor.numel());
+    for(size_t i=0;i<tensor.numel();i++){
+        eigen_tensor(i)=tensor[i].item<float>();
+    }
+    return eigen_tensor;
+}
+
+bool TestIfEqual(Tensor1dXf tensor1, Tensor1dXf tensor2, float tolerance = 1e-5){
+     if (tensor1.dimensions() != tensor2.dimensions()) {
+        return false; 
+    }
+    for (int i = 0; i < tensor1.size(); ++i) {
+        if (std::abs(tensor1(i) - tensor2(i)) > tolerance) {
+            return false; 
+        }
+    }
+    return true; 
+}
+//make the test more organized and create a test for all models
+void TestSimpleModel(){
+    bool testPased=1;
+    fs::path base_path = "/home/torfinhell/Denoiser.cpp/tests/test_data/SimpleModel";
+    fs::path input_path=base_path / "input.pth";
+    fs::path model_path=base_path / "model.pth";
+    fs::path prediction_path=base_path / "prediction.pth";
+    torch::jit::script::Module prior_input, model, prior_prediction;
+    torch::Tensor input_tensors, prediction_tensors;
+    try {
+        model = torch::jit::load(model_path);
+        prior_input = torch::jit::load(input_path);
+        prior_prediction = torch::jit::load(prediction_path);
+        input_tensors = prior_input.attr("prior").toTensor();
+        prediction_tensors = prior_prediction.attr("prior").toTensor();
+        std::cout << "Simple Model loaded successfully"<<std::endl;
+    } catch (const c10::Error& e) {
+        std::cerr << "Error loading the model: " << e.what()<<std::endl;
+        testPased=0;
+    }
+    Tensor1dXf input=TorchToEigen(input_tensors);
+    Tensor1dXf prediction=TorchToEigen(prediction_tensors);
+    SimpleModel simple_model, loaded_model;
+    if(!simple_model.load_from_jit_module(model)){
+        std::cerr<<"Coudn't load model from jit."<<std::endl;
+        testPased=0;
+    }
+    std::ios::sync_with_stdio(false);
+    std::ofstream output_file(base_path / "data.txt");
+    if (!output_file) {
+        std::cerr << "Error opening file!" << std::endl;
+        std::cout<<"Simple Model Test not passed"<<std::endl;
+        return;
+    }
+    simple_model.load_to_file(output_file);
+    if (!output_file.good()) {
+        std::cerr << "Error writing to file!" << std::endl;
+    }
+    output_file.flush();
+    output_file.close();
+    std::ifstream input_file(base_path / "data.txt");
+    if (!input_file) {
+        std::cerr << "Error opening file!" << std::endl;
+        std::cout<<"Simple Model Test not passed"<<std::endl;
+        return;
+    }
+    loaded_model.load_from_file(input_file);
+    input_file.close();
+    if(!simple_model.IsEqual(loaded_model, 1e-5)){
+        std::cerr<<"Model Is not correctly loaded. The Max difference between there elements"<<simple_model.MaxAbsDifference(loaded_model)<<std::endl;
+        testPased=0;
+    }  
+    simple_model.forward(input);
+    if(!TestIfEqual(prediction, simple_model.result)){
+        std::cerr<<"Error Tensors in Simple Model test are not equal..."<<std::endl;
+        testPased=0;
+    }
+    if(testPased){
+        std::cout<<"Simple Model Test Successfully passed"<<std::endl;
+    }else{
+        std::cout<<"Simple Model Test not passed"<<std::endl;
+    }
 }

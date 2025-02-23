@@ -1,3 +1,4 @@
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 project(custom_ops)
 
@@ -29,3 +30,4 @@ target_include_directories(example-app PRIVATE ${TORCH_INCLUDE_DIRS})
 
 # Link the Torch libraries
 target_link_libraries(example-app "${TORCH_LIBRARIES}")
+

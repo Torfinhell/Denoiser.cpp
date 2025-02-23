@@ -17,14 +17,18 @@ def save_data_to_file(data, file_path):
 class SimpleModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc=nn.Linear(10, 2)
+        self.fc=nn.Linear(2,10)
     def forward(self,x:torch.Tensor)->torch.Tensor:
         return self.fc(x)
 def CreateTests(model, input:TensorContainer, path:TensorContainer):
     predictions=model(input)
+    # print(input)
+    # print(model.fc.weight.data)
+    # print(model.fc.bias.data)
+    # print(predictions)
     save_data_to_file(createTensorContainer(predictions), f"{path}/prediction.pth")
     save_data_to_file(model, f"{path}/model.pth")
     save_data_to_file(createTensorContainer(input), f"{path}/input.pth")
 if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
-    CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
+    CreateTests(SimpleModel(), torch.randn(2),f"{AllTestsPath}/SimpleModel")

@@ -7,6 +7,7 @@
 #include <string>
 #include <unsupported/Eigen/CXX11/Tensor>
 #include <vector>
+#include <variant>
 
 namespace Eigen
 {
@@ -26,6 +27,19 @@ typedef Tensor<float, 3> Tensor3dXf;
 typedef Tensor<float, 2> Tensor2dXf;
 typedef Tensor<float, 1> Tensor1dXf;
 typedef Tensor<std::complex<float>, 3> Tensor3dXcf;
+typedef std::variant<
+        Tensor3dXh,
+        Tensor3dXch,
+        Tensor1dXh,
+        Tensor4dXh,
+        VectorXh,
+        MatrixXh,
+        Tensor4dXf,
+        Tensor3dXf,
+        Tensor2dXf,
+        Tensor1dXf,
+        Tensor3dXcf
+    > VariantTensor;
 } // namespace Eigen
 
 #endif // TENSOR_HPP
