@@ -8,6 +8,10 @@
 #include <stdexcept>
 #include <string>
 #include <unsupported/Eigen/CXX11/Tensor>
+std::array<long, 1> indices_dim_1 = {0};
+std::array<long, 2> indices_dim_2 = {0, 0};
+std::array<long, 3> indices_dim_3 = {0, 0, 0};
+std::array<long, 4> indices_dim_4 = {0, 0, 0, 0};
 namespace fs = std::filesystem;
 using namespace Eigen;
 void print_model_layers(const torch::jit::script::Module &module)
@@ -98,4 +102,82 @@ void TestSimpleModel()
         return;
     }
     std::cout << "Simple Model Test Successfully passed" << std::endl;
+}
+void TestOneEncoder()
+{
+    try {
+        fs::path base_path = "../tests/test_data/OneEncoder";
+        fs::path input_path = base_path / "input.pth";
+        fs::path model_path = base_path / "model.pth";
+        fs::path prediction_path = base_path / "prediction.pth";
+        assert(fs::exists(input_path) && "Input path does not exist");
+        assert(fs::exists(model_path) && "Model path does not exist");
+        assert(fs::exists(prediction_path) && "Prediction path does not exist");
+        torch::jit::script::Module prior_input, model, prior_prediction;
+        torch::Tensor input_tensors, prediction_tensors;
+
+        try {
+            model = torch::jit::load(model_path);
+            prior_input = torch::jit::load(input_path);
+            prior_prediction = torch::jit::load(prediction_path);
+            input_tensors = prior_input.attr("prior").toTensor();
+            prediction_tensors = prior_prediction.attr("prior").toTensor();
+            std::cout << "Encoder Model loaded successfully" << std::endl;
+        }
+        catch (const c10::Error &e) {
+            throw std::runtime_error("Error loading the model: " +
+                                     std::string(e.what()));
+        }
+        assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
+        assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
+        Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
+        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
+        OneEncoder one_encoder_model, loaded_model;
+        if (!one_encoder_model.load_from_jit_module(model)) {
+            throw std::runtime_error("Couldn't load model from jit.\n");
+        }
+
+        std::ios::sync_with_stdio(false);
+        std::ofstream output_file(base_path / "data.txt");
+        if (!output_file) {
+            throw std::runtime_error("Error opening data.txt file!");
+        }
+        one_encoder_model.load_to_file(output_file);
+        if (!output_file.good()) {
+            throw std::runtime_error("Error writing to file!");
+        }
+        output_file.close();
+
+        std::ifstream input_file(base_path / "data.txt");
+        if (!input_file) {
+            throw std::runtime_error("Error opening data.txt file!");
+        }
+        loaded_model.load_from_file(input_file);
+        input_file.close();
+
+        if (!one_encoder_model.IsEqual(loaded_model, 1e-5)) {
+            throw std::runtime_error(
+                "Model is not correctly loaded. The Max difference between "
+                "their "
+                "elements: " +
+                std::to_string(
+                    one_encoder_model.MaxAbsDifference(loaded_model)));
+        }
+        if (!TestIfEqual<Tensor3dXf>(prediction,
+                                     one_encoder_model.forward(input))) {
+            throw std::runtime_error(
+                "Error: Comparison of our prediction and known output failed."
+                "The Absolute difference is: " +
+                std::to_string(MaxAbsDifference(
+                    prediction, one_encoder_model.forward(input))));
+        }
+    }
+    catch (const std::exception &e) {
+        std::cout << "OneEncoder Model Test not passed: \n"
+                  << "Error occurred in file: " << __FILE__
+                  << " at line: " << __LINE__ << "\n"
+                  << e.what() << std::endl;
+        return;
+    }
+    std::cout << "OneEncoder Model Test Successfully passed" << std::endl;
 }

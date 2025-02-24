@@ -1,6 +1,5 @@
 #include "denoiser.h"
 #include "layers.h"
-#include "load_model.h"
 #include "tensors.h"
 
 #include <Eigen/Dense>
@@ -22,28 +21,24 @@ void print_model_layers(const torch::jit::script::Module &module);
 template <typename EigenTensor>
 float MaxAbsDifference(EigenTensor tensor1, EigenTensor tensor2)
 {
-    if (tensor1.dimensions() != tensor2.dimensions()) {
-        throw std::runtime_error("Error Comparing Tensors of different size");
-    }
+    assert(tensor1.dimensions() == tensor2.dimensions());
     Eigen::Tensor<float, 0> max_abs_tensor =
         (tensor2 - tensor1).abs().maximum();
-    float max_diff = max_abs_tensor(0);
-    return max_diff;
-    return 0;
+    return max_abs_tensor(0);
+    
 }
 template <typename EigenTensor>
 bool TestIfEqual(EigenTensor tensor1, EigenTensor tensor2,
                  float tolerance = 1e-5)
 {
-    if (tensor1.dimensions() != tensor2.dimensions()) {
-        throw std::runtime_error("Comparing Tensors of different size");
-    }
+    assert(tensor1.dimensions() == tensor2.dimensions());
     return MaxAbsDifference(tensor1, tensor2) <= tolerance;
 }
 
 template <typename EigenTensor, int NumDim>
 EigenTensor TorchToEigen(const torch::Tensor &torch_tensor)
 {
+    assert(torch_tensor.dim() == NumDim);
     std::array<long, NumDim> dimensions;
     for (int i = 0; i < NumDim; ++i) {
         dimensions[i] = torch_tensor.size(i);
@@ -103,10 +98,11 @@ void print_tensor(const Tensor &tensor, std::array<long, NumDim> &indices,
         else {
             for (size_t i = 0; i < tensor.dimension(current_pos); i++) {
                 indices[current_pos] = i;
-                print_tensor<Tensor, NumDim>(tensor, current_pos + 1, indices);
+                print_tensor<Tensor, NumDim>(tensor, indices, current_pos + 1);
             }
         }
     }
 }
 
 void TestSimpleModel();
+void TestOneEncoder();
