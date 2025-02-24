@@ -1,0 +1,26 @@
+[
+{
+  "directory": "/home/torfinhell/Denoiser.cpp/build",
+  "command": "/usr/bin/clang++-14 -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -I/usr/include/eigen3 -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -g -std=gnu++17 -D_GLIBCXX_USE_CXX11_ABI=0 -o CMakeFiles/example-app.dir/main_app/denoiser.cpp.o -c /home/torfinhell/Denoiser.cpp/main_app/denoiser.cpp",
+  "file": "/home/torfinhell/Denoiser.cpp/main_app/denoiser.cpp",
+  "output": "CMakeFiles/example-app.dir/main_app/denoiser.cpp.o"
+},
+{
+  "directory": "/home/torfinhell/Denoiser.cpp/build",
+  "command": "/usr/bin/clang++-14 -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -I/usr/include/eigen3 -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -g -std=gnu++17 -D_GLIBCXX_USE_CXX11_ABI=0 -o CMakeFiles/example-app.dir/main_app/layers.cpp.o -c /home/torfinhell/Denoiser.cpp/main_app/layers.cpp",
+  "file": "/home/torfinhell/Denoiser.cpp/main_app/layers.cpp",
+  "output": "CMakeFiles/example-app.dir/main_app/layers.cpp.o"
+},
+{
+  "directory": "/home/torfinhell/Denoiser.cpp/build",
+  "command": "/usr/bin/clang++-14 -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -I/usr/include/eigen3 -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -g -std=gnu++17 -D_GLIBCXX_USE_CXX11_ABI=0 -o CMakeFiles/example-app.dir/main_app/main.cpp.o -c /home/torfinhell/Denoiser.cpp/main_app/main.cpp",
+  "file": "/home/torfinhell/Denoiser.cpp/main_app/main.cpp",
+  "output": "CMakeFiles/example-app.dir/main_app/main.cpp.o"
+},
+{
+  "directory": "/home/torfinhell/Denoiser.cpp/build",
+  "command": "/usr/bin/clang++-14 -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -I/usr/include/eigen3 -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include -isystem /home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -g -std=gnu++17 -D_GLIBCXX_USE_CXX11_ABI=0 -o CMakeFiles/example-app.dir/main_app/tests.cpp.o -c /home/torfinhell/Denoiser.cpp/main_app/tests.cpp",
+  "file": "/home/torfinhell/Denoiser.cpp/main_app/tests.cpp",
+  "output": "CMakeFiles/example-app.dir/main_app/tests.cpp.o"
+}
+]

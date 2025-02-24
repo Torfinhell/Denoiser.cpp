@@ -1,0 +1,3 @@
+/home/torfinhell/Denoiser.cpp/build/CMakeFiles/example-app.dir
+/home/torfinhell/Denoiser.cpp/build/CMakeFiles/edit_cache.dir
+/home/torfinhell/Denoiser.cpp/build/CMakeFiles/rebuild_cache.dir
