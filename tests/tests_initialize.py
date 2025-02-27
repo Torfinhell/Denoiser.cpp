@@ -21,11 +21,11 @@ def CreateTests(model, input:TensorContainer, path:TensorContainer, predictions=
     if(predictions is None):
         predictions=model(input)
     # print(input)
-    for layer in model.encoder:
-        if isinstance(layer, nn.Sequential):
-            for sub_layer in layer:
-                if isinstance(sub_layer, nn.Conv1d):
-                    print("Convolutional weights:", sub_layer.weight.data)
+    # for layer in model.encoder:
+    #     if isinstance(layer, nn.Sequential):
+    #         for sub_layer in layer:
+    #             if isinstance(sub_layer, nn.Conv1d):
+    #                 print("Convolutional weights:", sub_layer.weight.data)
     # print(predictions)
     save_data_to_file(createTensorContainer(predictions), f"{path}/prediction.pth")
     save_data_to_file(model, f"{path}/model.pth")
@@ -40,7 +40,7 @@ class OneEncoder(nn.Module):
     def __init__(self,
                  chin=1,
                  chout=1,
-                 hidden=2,###########
+                 hidden=48,###########
                  ch_scale = 2,
                  kernel_size=8,
                  stride=4,
@@ -58,9 +58,9 @@ class OneEncoder(nn.Module):
         encode = []
         encode += [
             nn.Conv1d(chin, hidden, self.kernel_size, self.stride),
-            # nn.ReLU(),
-            # nn.Conv1d(hidden, hidden * ch_scale, 1), 
-            # activation,
+            nn.ReLU(),
+            nn.Conv1d(hidden, hidden * ch_scale, 1), 
+            activation,
         ]
         self.encoder.append(nn.Sequential(*encode))
         # decode=[]
@@ -71,9 +71,7 @@ class OneEncoder(nn.Module):
         # self.decoder.append(nn.Sequential(*decode))
     def forward(self, x):
         for layer in self.encoder:
-            # print(x)
             x=layer(x)
-            # print(x)
         # for layer in self.decoder:
         #     x=layer(x)
         return x
@@ -88,6 +86,6 @@ def final_test():
     CreateTests(demucs, x, f"{AllTestsPath}/dns48", out)
 if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
-    # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
+    CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
     CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/OneEncoder")
     # final_test()

@@ -25,7 +25,6 @@ float MaxAbsDifference(EigenTensor tensor1, EigenTensor tensor2)
     Eigen::Tensor<float, 0> max_abs_tensor =
         (tensor2 - tensor1).abs().maximum();
     return max_abs_tensor(0);
-    
 }
 template <typename EigenTensor>
 bool TestIfEqual(EigenTensor tensor1, EigenTensor tensor2,

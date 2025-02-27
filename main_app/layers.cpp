@@ -135,7 +135,11 @@ bool SimpleModel::IsEqual(const SimpleModel &other, float tolerance)
 
 Tensor3dXf OneEncoder::forward(Tensor3dXf tensor)
 { // проверить точно ли такой тип
-    return convv1d.forward(tensor);
+    auto res1 = conv_1_1d.forward(tensor, 1, hidden, kernel_size, stride);
+    auto res2 = relu.forward(res1);
+    auto res3 = conv_2_1d.forward(res2, hidden, hidden * ch_scale, 1);
+    auto res4 = glu.forward(res3);
+    return res4;
 }
 
 bool OneEncoder::load_from_jit_module(torch::jit::script::Module module)
@@ -143,7 +147,10 @@ bool OneEncoder::load_from_jit_module(torch::jit::script::Module module)
     try {
         for (const auto &child : module.named_children()) {
             if (child.name == "encoder") {
-                if (!convv1d.load_from_jit_module(child.value)) {
+                if (!conv_1_1d.load_from_jit_module(child.value, "0.0")) {
+                    return false;
+                }
+                if (!conv_2_1d.load_from_jit_module(child.value, "0.2")) {
                     return false;
                 }
             }
@@ -163,58 +170,69 @@ bool OneEncoder::load_from_jit_module(torch::jit::script::Module module)
 
 void OneEncoder::load_to_file(std::ofstream &outputstream)
 {
-    convv1d.load_to_file(outputstream);
+    conv_1_1d.load_to_file(outputstream);
+    conv_2_1d.load_to_file(outputstream);
 }
 
 void OneEncoder::load_from_file(std::ifstream &inputstream)
 {
-    convv1d.load_from_file(inputstream);
+    conv_1_1d.load_from_file(inputstream);
+    conv_2_1d.load_from_file(inputstream);
 }
 
 float OneEncoder::MaxAbsDifference(const OneEncoder &other)
 {
-    return max_of_multiple({convv1d.MaxAbsDifference(other.convv1d)});
+    return max_of_multiple({conv_1_1d.MaxAbsDifference(other.conv_1_1d),
+                            conv_2_1d.MaxAbsDifference(other.conv_2_1d)});
 }
 
 bool OneEncoder::IsEqual(const OneEncoder &other, float tolerance)
 {
-    return convv1d.IsEqual(other.convv1d);
+    return MaxAbsDifference(other) <= tolerance;
 }
 
-Tensor3dXf Conv1D::forward(Tensor3dXf tensor)
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride)
 {
     int batch_size = tensor.dimension(0);
     int length = tensor.dimension(2);
     int new_length = GetSize(length, kernel_size, stride);
-    int output_channels = conv_weights.dimension(0);
-    assert(tensor.dimension(1) == 1);
-    assert(conv_weights.dimension(1) == 1);
-    assert(kernel_size == conv_weights.dimension(2));
-    assert(kernel_size <= length);
-    assert(stride <= length);
-    assert(hidden == output_channels);
-    Tensor3dXf newtensor(batch_size, output_channels, new_length);
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+    assert(kernel_size > 0 && kernel_size <= length);
+    assert(stride > 0 && stride <= length);
+    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
     newtensor.setZero();
-    for (int channel = 0; channel < output_channels; channel++) {
+    for (int channel = 0; channel < OutputChannels; channel++) {
         for (int batch = 0; batch < batch_size; batch++) {
-            for (int pos = 0, counter = 0; pos + kernel_size <= length;
+            int counter = 0;
+            for (int pos = 0; pos + kernel_size <= length;
                  pos += stride, counter++) {
+                assert(counter < new_length);
                 for (int i = 0; i < kernel_size; i++) {
-                    newtensor(batch, channel, counter) +=
-                        tensor(batch, 0, pos + i) * conv_weights(channel, 0, i);
+                    for (int input_channel = 0; input_channel < InputChannels;
+                         input_channel++) {
+                        newtensor(batch, channel, counter) +=
+                            tensor(batch, input_channel, pos + i) *
+                            conv_weights(channel, input_channel, i);
+                    }
                 }
                 newtensor(batch, channel, counter) += conv_bias(channel);
             }
+            assert(counter == new_length);
         }
     }
     return newtensor;
 }
 
-bool Conv1D::load_from_jit_module(torch::jit::script::Module module)
+bool Conv1D::load_from_jit_module(torch::jit::script::Module module,
+                                  std::string weights_index = "0.0")
 {
     try {
         for (const auto &param : module.named_parameters()) {
-            if (param.name == "0.0.weight") {
+            if (param.name == weights_index + ".weight") {
                 assert(param.value.dim() == 3);
                 Tensor3dXf read_conv_weights(param.value.size(2),
                                              param.value.size(1),
@@ -225,15 +243,17 @@ bool Conv1D::load_from_jit_module(torch::jit::script::Module module)
                 conv_weights =
                     read_conv_weights.shuffle(std::array<int, 3>{2, 1, 0});
             }
-            else if (param.name == "0.0.bias") {
+            else if (param.name == weights_index + ".bias") {
                 assert(param.value.dim() == 1);
                 conv_bias.resize(param.value.size(0));
                 std::memcpy(conv_bias.data(), param.value.data_ptr<float>(),
                             param.value.numel() * sizeof(float));
             }
-            else {
+            else if (param.name.rfind(".bias") != param.name.size() - 5 &&
+                     param.name.rfind(".weight") != param.name.size() - 7) {
                 throw std::runtime_error(
-                    "Conv1D has something else besides weight and bias");
+                    "Conv1D has something else besides weight and bias: " +
+                    param.name);
             }
         }
     }
@@ -277,4 +297,29 @@ int Conv1D::GetSize(int size, int kernel_size, int stride)
     assert(kernel_size <= size);
     assert(stride <= size);
     return (size - kernel_size) / stride + 1;
+}
+
+Tensor3dXf RELU::forward(Tensor3dXf tensor)
+{
+    auto func = [](float x) { return (x > 0.0f) ? x : 0.0f; };
+    return tensor.unaryExpr(func);
+}
+
+
+Tensor3dXf GLU::forward(Tensor3dXf tensor)
+{
+    int batch_size = tensor.dimension(0);
+    int channels = tensor.dimension(1);
+    int height = tensor.dimension(2);
+    
+    if (channels % 2 != 0) {
+        throw std::invalid_argument("Number of channels should be divisible by 2 for GLU 3D");
+    }
+    Eigen::array<Eigen::Index, 3> offset1 = {0, 0, 0};
+    Eigen::array<Eigen::Index, 3> offset2 = {0, channels / 2, 0};
+    Eigen::array<Eigen::Index, 3> extent = {batch_size, channels / 2, height};
+    Tensor<float, 3> A = tensor.slice(offset1, extent);
+    Tensor<float, 3> B = tensor.slice(offset2, extent);
+    B = B.unaryExpr([](float x) { return 1.0f / (1.0f + std::exp(-x)); });
+    return A * B;
 }

@@ -133,10 +133,10 @@ void TestOneEncoder()
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
         OneEncoder one_encoder_model, loaded_model;
+        // print_model_layers(model);
         if (!one_encoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
         }
-
         std::ios::sync_with_stdio(false);
         std::ofstream output_file(base_path / "data.txt");
         if (!output_file) {
