@@ -6,4 +6,5 @@ int main()
 {
     TestSimpleModel();
     TestOneEncoder();
+    TestSimpleEncoderDecoder();
 }

@@ -12,7 +12,6 @@ extern std::array<long, 1> indices_dim_1;
 extern std::array<long, 2> indices_dim_2;
 extern std::array<long, 3> indices_dim_3;
 extern std::array<long, 4> indices_dim_4;
-namespace fs = std::filesystem;
 using namespace Eigen;
 struct Layer {
   public:
@@ -56,6 +55,20 @@ struct Conv1D : public Layer {
     Tensor3dXf conv_weights;
     Tensor1dXf conv_bias;
 };
+struct ConvTranspose1d : public Layer {
+    Tensor3dXf forward(Tensor3dXf tensor, int InputChannels, int OutputChannels,
+                       int kernel_size = 3, int stride = 1);
+    bool load_from_jit_module(torch::jit::script::Module module,
+                              std::string weights_index);
+    void load_to_file(std::ofstream &outputstream) override;
+    void load_from_file(std::ifstream &inputstream) override;
+    float MaxAbsDifference(const ConvTranspose1d &other);
+    bool IsEqual(const ConvTranspose1d &other, float tolerance = 1e-5);
+    ~ConvTranspose1d() {}
+    int GetTransposedSize(int size, int kernel_size, int stride);
+    Tensor3dXf conv_tr_weights;
+    Tensor1dXf conv_tr_bias;
+};
 struct RELU : public Layer {
     Tensor3dXf forward(Tensor3dXf tensor);
 };
@@ -74,5 +87,51 @@ struct OneEncoder : public Layer {
     Conv1D conv_2_1d;
     RELU relu;
     GLU glu;
-    int hidden = 48, ch_scale = 2, kernel_size = 8, stride = 4;
+    int hidden, ch_scale, kernel_size, stride,chout;
+    OneEncoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
+               int stride = 4, int chout = 1)
+        : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+          stride(stride),chout(chout)
+    {
+    }
 };
+
+struct OneDecoder : public Layer {
+    Tensor3dXf forward(Tensor3dXf tensor);
+    bool load_from_jit_module(torch::jit::script::Module module) override;
+    void load_to_file(std::ofstream &outputstream) override;
+    void load_from_file(std::ifstream &inputstream) override;
+    float MaxAbsDifference(const OneDecoder &other);
+    bool IsEqual(const OneDecoder &other, float tolerance = 1e-5);
+    ~OneDecoder() {}
+    Conv1D conv_1_1d;
+    GLU glu;
+    ConvTranspose1d conv_tr_1_1d;
+    int hidden, ch_scale, kernel_size, stride, chout;
+    OneDecoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
+               int stride = 4, int chout = 1)
+        : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+          stride(stride),chout(chout)
+    {
+    }
+}; /// надо дореализовывать
+
+struct SimpleEncoderDecoder : public Layer {
+    Tensor3dXf forward(Tensor3dXf tensor);
+    bool load_from_jit_module(torch::jit::script::Module module) override;
+    void load_to_file(std::ofstream &outputstream) override;
+    void load_from_file(std::ifstream &inputstream) override;
+    float MaxAbsDifference(const SimpleEncoderDecoder &other);
+    bool IsEqual(const SimpleEncoderDecoder &other, float tolerance = 1e-5);
+    ~SimpleEncoderDecoder() {}
+    OneEncoder one_encoder;
+    OneDecoder one_decoder;
+    int hidden, ch_scale, kernel_size, stride,chout;
+    SimpleEncoderDecoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
+                         int stride = 4, int chout = 1)
+        : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+          stride(stride),chout(chout), one_encoder(hidden, ch_scale, kernel_size, stride),
+          one_decoder(hidden, ch_scale, kernel_size, stride)
+    {
+    }
+}; /// надо дореализовывать

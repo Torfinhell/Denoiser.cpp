@@ -63,17 +63,18 @@ class OneEncoder(nn.Module):
             activation,
         ]
         self.encoder.append(nn.Sequential(*encode))
-        # decode=[]
-        # decode += [
-        #     nn.Conv1d(hidden, ch_scale * hidden, 1), activation,
-        #     nn.ConvTranspose1d(hidden, chout, self.kernel_size, self.stride),
-        # ]
-        # self.decoder.append(nn.Sequential(*decode))
+        decode=[]
+        decode += [
+            nn.Conv1d(hidden, ch_scale * hidden, 1), 
+            activation,
+            nn.ConvTranspose1d(hidden, chout, self.kernel_size, self.stride),
+        ]
+        self.decoder.append(nn.Sequential(*decode))
     def forward(self, x):
         for layer in self.encoder:
             x=layer(x)
-        # for layer in self.decoder:
-        #     x=layer(x)
+        for layer in self.decoder:
+            x=layer(x)
         return x
 
 def final_test():
@@ -87,5 +88,5 @@ def final_test():
 if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
     CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
-    CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/OneEncoder")
+    CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")
     # final_test()

@@ -105,3 +105,5 @@ void print_tensor(const Tensor &tensor, std::array<long, NumDim> &indices,
 
 void TestSimpleModel();
 void TestOneEncoder();
+
+void TestSimpleEncoderDecoder();
