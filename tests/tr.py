@@ -36,7 +36,7 @@ class SimpleModel(nn.Module):
         self.fc=nn.Linear(10,2)
     def forward(self,x:torch.Tensor)->torch.Tensor:
         return self.fc(x) 
-class TestModel(nn.Module):
+class OneEncoder(nn.Module):
     def __init__(self,
                  chin=1,
                  chout=1,
@@ -70,13 +70,9 @@ class TestModel(nn.Module):
             nn.ConvTranspose1d(hidden, chout, self.kernel_size, self.stride),
         ]
         self.decoder.append(nn.Sequential(*decode))
-        self.lstm = BLSTM(hidden, bi=False)
     def forward(self, x):
         for layer in self.encoder:
             x=layer(x)
-        x = x.permute(2, 0, 1)
-        x, _ = self.lstm(x)
-        x = x.permute(1, 2, 0)
         for layer in self.decoder:
             x=layer(x)
         return x
@@ -92,5 +88,5 @@ def final_test():
 if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
     # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
-    CreateTests(TestModel(), torch.randn(2, 1, 12),f"{AllTestsPath}/SimpleEncoderDecoderLSTM")
+    CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")
     # final_test()

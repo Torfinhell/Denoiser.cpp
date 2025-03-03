@@ -194,7 +194,6 @@ void TestSimpleEncoderDecoder()
         assert(fs::exists(prediction_path) && "Prediction path does not exist");
         torch::jit::script::Module prior_input, model, prior_prediction;
         torch::Tensor input_tensors, prediction_tensors;
-
         try {
             model = torch::jit::load(model_path);
             prior_input = torch::jit::load(input_path);
