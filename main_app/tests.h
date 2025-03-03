@@ -107,3 +107,5 @@ void TestSimpleModel();
 void TestOneEncoder();
 
 void TestSimpleEncoderDecoder();
+
+void TestSimpleEncoderDecoderLSTM();

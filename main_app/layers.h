@@ -114,7 +114,19 @@ struct OneDecoder : public Layer {
           stride(stride),chout(chout)
     {
     }
-}; /// надо дореализовывать
+};
+struct OneLSTM : public Layer {
+    Tensor3dXf forward(Tensor3dXf tensor,int HiddenSize, bool bi=false);
+    bool load_from_jit_module(torch::jit::script::Module module,
+                              std::string weights_index);
+    void load_to_file(std::ofstream &outputstream) override;
+    void load_from_file(std::ifstream &inputstream) override;
+    float MaxAbsDifference(const OneLSTM &other);
+    bool IsEqual(const OneLSTM &other, float tolerance = 1e-5);
+    ~OneLSTM() {}
+    Tensor2dXf lstm_weight_ih,lstm_weight_hh;
+    Tensor2dXf lstm_bias_ih,lstm_bias_hh;
+}; ///
 
 struct SimpleEncoderDecoder : public Layer {
     Tensor3dXf forward(Tensor3dXf tensor);
@@ -134,4 +146,24 @@ struct SimpleEncoderDecoder : public Layer {
           one_decoder(hidden, ch_scale, kernel_size, stride)
     {
     }
-}; /// надо дореализовывать
+}; 
+struct SimpleEncoderDecoderLSTM : public Layer {
+    Tensor3dXf forward(Tensor3dXf tensor);
+    bool load_from_jit_module(torch::jit::script::Module module) override;
+    void load_to_file(std::ofstream &outputstream) override;
+    void load_from_file(std::ifstream &inputstream) override;
+    float MaxAbsDifference(const SimpleEncoderDecoderLSTM &other);
+    bool IsEqual(const SimpleEncoderDecoderLSTM &other, float tolerance = 1e-5);
+    ~SimpleEncoderDecoderLSTM() {}
+    OneEncoder one_encoder;
+    OneDecoder one_decoder;
+    OneLSTM lstm1, lstm2;
+    int hidden, ch_scale, kernel_size, stride,chout;
+    SimpleEncoderDecoderLSTM(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
+                         int stride = 4, int chout = 1)
+        : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+          stride(stride),chout(chout), one_encoder(hidden, ch_scale, kernel_size, stride),
+          one_decoder(hidden, ch_scale, kernel_size, stride)
+    {
+    }
+};

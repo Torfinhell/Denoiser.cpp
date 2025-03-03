@@ -6,7 +6,10 @@
 #include <array>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
+#include <cmath>
+#include <tuple>
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg = {
     Eigen::IndexPair<int>(1, 0)};
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_sec_transposed = {
@@ -193,7 +196,7 @@ bool OneEncoder::IsEqual(const OneEncoder &other, float tolerance)
 
 Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
                            int OutputChannels, int kernel_size, int stride)
-{
+{   
     int batch_size = tensor.dimension(0);
     int length = tensor.dimension(2);
     int new_length = GetSize(length, kernel_size, stride);
@@ -320,7 +323,8 @@ Tensor3dXf GLU::forward(Tensor3dXf tensor)
     Eigen::array<Eigen::Index, 3> extent = {batch_size, channels / 2, height};
     Tensor<float, 3> A = tensor.slice(offset1, extent);
     Tensor<float, 3> B = tensor.slice(offset2, extent);
-    B = B.unaryExpr([](float x) { return 1.0f / (1.0f + std::exp(-x)); });
+    auto Sigmoid=[](float x) { return 1.0f / (1.0f + std::exp(-x)); };
+    B = B.unaryExpr(Sigmoid);
     return A * B;
 }
 
@@ -520,5 +524,177 @@ bool ConvTranspose1d::IsEqual(const ConvTranspose1d &other, float tolerance) {
 
 int ConvTranspose1d::GetTransposedSize(int size, int kernel_size, int stride) {
     return stride * (size - 1) + kernel_size;
+}
+
+Tensor3dXf SimpleEncoderDecoderLSTM::forward(Tensor3dXf tensor) {
+    auto res1 = one_encoder.forward(tensor);
+    // auto res2=lstm1.forward(res1.shuffle(std::array<long long, 3>{2,0,1}),hidden);
+    // auto res3=lstm2.forward(res2,hidden);
+    // auto res4 = one_decoder.forward(res2.shuffle(std::array<long long, 3>{1,2,0}));////res3
+    auto res4=one_decoder.forward(res1);
+    return res4;
+}
+
+bool SimpleEncoderDecoderLSTM::load_from_jit_module(torch::jit::script::Module module) {
+    if (!one_encoder.load_from_jit_module(module)) {
+        return false;
+    }
+    // if (!lstm1.load_from_jit_module(module,"0")) {
+    //     return false;
+    // }
+    // if (!lstm2.load_from_jit_module(module,"1")) {
+    //     return false;
+    // }
+    if (!one_decoder.load_from_jit_module(module)) {
+        return false;
+    }
+    return true;
+}
+
+void SimpleEncoderDecoderLSTM::load_to_file(std::ofstream &outputstream) {
+    one_encoder.load_to_file(outputstream);
+    lstm1.load_to_file(outputstream);
+    lstm2.load_to_file(outputstream);
+    one_decoder.load_to_file(outputstream);
+}
+
+void SimpleEncoderDecoderLSTM::load_from_file(std::ifstream &inputstream) {
+    one_encoder.load_from_file(inputstream);
+    lstm1.load_from_file(inputstream);
+    lstm2.load_from_file(inputstream);
+    one_decoder.load_from_file(inputstream);
+}
+
+float SimpleEncoderDecoderLSTM::MaxAbsDifference(const SimpleEncoderDecoderLSTM &other) {
+    return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
+        one_decoder.MaxAbsDifference(other.one_decoder),lstm1.MaxAbsDifference(other.lstm1),
+        lstm2.MaxAbsDifference(other.lstm2)});
+}
+
+bool SimpleEncoderDecoderLSTM::IsEqual(const SimpleEncoderDecoderLSTM &other, float tolerance) {
+    return MaxAbsDifference(other) <= tolerance;
+}
+
+
+Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize, bool bi) {
+    int length = tensor.dimension(0);
+    int batch_size = tensor.dimension(1);
+    int input_size = tensor.dimension(2);
+    Tensor3dXf output(length, batch_size, HiddenSize); 
+    Tensor2dXf hidden_state(HiddenSize, batch_size); 
+    Tensor2dXf cell_state(HiddenSize, batch_size); 
+    hidden_state.setZero();
+    cell_state.setZero();
+    auto ExtendColumn = [](Tensor2dXf column_weight, long columns_count)
+    -> Tensor2dXf {
+        assert(column_weight.dimension(1)==1);
+        Tensor2dXf new_column_weight(column_weight.dimension(0), columns_count);
+        for (long col = 0; col < columns_count; col++) {
+            new_column_weight.chip(col, 1) = column_weight.chip(0, 1);
+        }
+        return new_column_weight;
+    };
+    auto tanh_func = [](float x) { return std::tanh(x); };
+    auto sigmoid_func = [](float x) { return 1 / (1 + std::exp(-x)); };
+    assert(lstm_weight_hh.dimension(0)==4*HiddenSize && lstm_weight_hh.dimension(1)==HiddenSize);
+    assert(lstm_weight_ih.dimension(0)==4*HiddenSize && lstm_weight_ih.dimension(1)==input_size);
+    assert(lstm_bias_ih.dimension(0)==4*HiddenSize && lstm_bias_ih.dimension(1)==1);
+    assert(lstm_bias_hh.dimension(0)==4*HiddenSize && lstm_bias_hh.dimension(1)==1);
+    for(int t=0;t<length;t++){
+        Tensor2dXf x_t =tensor.chip(t,0);//(input_size, batch_size)
+        Tensor2dXf combined_input=lstm_weight_ih.contract(x_t, product_dims_sec_transposed)+ExtendColumn(lstm_bias_ih,batch_size);
+        Tensor2dXf combined_hidden=lstm_weight_hh.contract(hidden_state, product_dims_reg)+ExtendColumn(lstm_bias_hh,batch_size);
+        Tensor2dXf gates = combined_input + combined_hidden;
+        std::array<long, 2>offset={0,0};
+        std::array<long, 2>extent={HiddenSize,batch_size};
+        Tensor2dXf i_t = gates.slice(offset,extent).unaryExpr(sigmoid_func);
+        offset[0]+=HiddenSize;
+        Tensor2dXf f_t=gates.slice(offset,extent).unaryExpr(sigmoid_func);
+        offset[0]+=HiddenSize;
+        Tensor2dXf c_t=gates.slice(offset,extent).unaryExpr(tanh_func);
+        offset[0]+=HiddenSize;
+        Tensor2dXf o_t=gates.slice(offset,extent).unaryExpr(sigmoid_func);
+        cell_state=f_t*cell_state+i_t*c_t;
+        hidden_state=o_t*cell_state.unaryExpr(tanh_func);
+        output.chip(t, 0) = hidden_state.shuffle(std::array<long,2>{1,0});
+    }
+    return output; 
+}
+
+
+
+bool OneLSTM::load_from_jit_module(torch::jit::script::Module module,
+    std::string weights_index) {
+    try {
+        for (const auto &param : module.named_parameters()) {
+            if (param.name == "lstm.lstm.weight_ih_l"+weights_index) {
+                assert(param.value.dim() == 2);
+                Tensor2dXf read_lstm_weight_ih(param.value.size(1),
+                                                param.value.size(0)); // как точно
+                std::memcpy(read_lstm_weight_ih.data(),
+                            param.value.data_ptr<float>(),
+                            param.value.numel() * sizeof(float));
+                lstm_weight_ih =
+                    read_lstm_weight_ih.shuffle(std::array<int, 2>{1, 0});
+            } else if (param.name == "lstm.lstm.weight_hh_l"+weights_index) {
+                assert(param.value.dim() == 2);
+                Tensor2dXf read_lstm_weight_hh(param.value.size(1),
+                                                param.value.size(0)); // как точно
+                std::memcpy(read_lstm_weight_hh.data(),
+                            param.value.data_ptr<float>(),
+                            param.value.numel() * sizeof(float));
+                lstm_weight_hh =
+                    read_lstm_weight_hh.shuffle(std::array<int, 2>{1, 0});
+            }
+            else if (param.name == "lstm.lstm.bias_ih_l"+weights_index) {
+                assert(param.value.dim() == 1);
+                lstm_bias_ih.resize(param.value.size(0),1);
+                std::memcpy(lstm_bias_ih.data(), param.value.data_ptr<float>(),
+                            param.value.numel() * sizeof(float));
+            }
+            else if (param.name == "lstm.lstm.bias_hh_l"+weights_index) {
+                assert(param.value.dim() == 1);
+                lstm_bias_hh.resize(param.value.size(0),1);
+                std::memcpy(lstm_bias_hh.data(), param.value.data_ptr<float>(),
+                            param.value.numel() * sizeof(float));
+            }
+        }
+    }
+    catch (const c10::Error &e) {
+        std::cerr << "Error loading from JIT module: " << e.what() << std::endl;
+        return false;
+    }
+    catch (const std::exception &e) {
+        std::cerr << "Standard exception: " << e.what() << std::endl;
+        return false;
+    }
+    return true;
+}
+
+void OneLSTM::load_to_file(std::ofstream &outputstream) {
+    WriteTensor<Tensor2dXf,2>(lstm_weight_ih, outputstream, indices_dim_2);
+    WriteTensor<Tensor2dXf,2>(lstm_weight_hh, outputstream, indices_dim_2);
+    WriteTensor<Tensor2dXf,2>(lstm_bias_ih, outputstream, indices_dim_2);
+    WriteTensor<Tensor2dXf,2>(lstm_bias_hh, outputstream, indices_dim_2);
+}
+
+void OneLSTM::load_from_file(std::ifstream &inputstream) {
+    ReadTensor<Tensor2dXf,2>(lstm_weight_ih, inputstream, indices_dim_2);
+    ReadTensor<Tensor2dXf,2>(lstm_weight_hh, inputstream, indices_dim_2);
+    ReadTensor<Tensor2dXf,2>(lstm_bias_ih, inputstream, indices_dim_2);
+    ReadTensor<Tensor2dXf,2>(lstm_bias_hh, inputstream, indices_dim_2);
+}
+
+float OneLSTM::MaxAbsDifference(const OneLSTM &other) {
+    return max_of_multiple<float>(
+        {::MaxAbsDifference(lstm_weight_ih, other.lstm_weight_ih),
+            ::MaxAbsDifference(lstm_weight_hh, other.lstm_weight_hh),
+            ::MaxAbsDifference(lstm_bias_ih, other.lstm_bias_ih),
+            ::MaxAbsDifference(lstm_bias_hh, other.lstm_bias_hh),
+        });
+}
+
+bool OneLSTM::IsEqual(const OneLSTM &other, float tolerance) {
+    return MaxAbsDifference(other) <= tolerance;
 }
 

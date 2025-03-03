@@ -4,7 +4,8 @@
 
 int main()
 {
-    TestSimpleModel();
-    TestOneEncoder();
-    TestSimpleEncoderDecoder();
+    // TestSimpleModel();
+    // TestOneEncoder();
+    // TestSimpleEncoderDecoder();
+    TestSimpleEncoderDecoderLSTM();
 }

@@ -98,7 +98,8 @@ def downsample2(x, zeros=56):
     return out.view(*other, -1).mul(0.5)
 from typing import Optional, Tuple  # <-- Added import for type annotations
 class BLSTM(nn.Module):
-    def __init__(self, dim, layers=2, bi=True):
+    ##################
+    def __init__(self, dim, layers=1, bi=True):
         super().__init__()
         klass = nn.LSTM
         self.lstm = klass(bidirectional=bi, num_layers=layers, hidden_size=dim, input_size=dim)
