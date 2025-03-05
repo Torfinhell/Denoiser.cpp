@@ -109,3 +109,5 @@ void TestOneEncoder();
 void TestSimpleEncoderDecoder();
 
 void TestSimpleEncoderDecoderLSTM();
+
+void TestDemucsModel();

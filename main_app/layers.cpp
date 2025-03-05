@@ -531,8 +531,8 @@ int ConvTranspose1d::GetTransposedSize(int size, int kernel_size, int stride) {
 Tensor3dXf SimpleEncoderDecoderLSTM::forward(Tensor3dXf tensor) {
     auto res1 = one_encoder.forward(tensor);
     auto res2=lstm1.forward(res1.shuffle(std::array<long long, 3>{2,0,1}),hidden);
-    // auto res3=lstm2.forward(res2,hidden);
-    auto res4 = one_decoder.forward(res2.shuffle(std::array<long long, 3>{1,2,0}));
+    auto res3=lstm2.forward(res2,hidden);
+    auto res4 = one_decoder.forward(res3.shuffle(std::array<long long, 3>{1,2,0}));
     return res4;
 }
 
@@ -543,9 +543,9 @@ bool SimpleEncoderDecoderLSTM::load_from_jit_module(torch::jit::script::Module m
     if (!lstm1.load_from_jit_module(module,"0")) {
         return false;
     }
-    // if (!lstm2.load_from_jit_module(module,"1")) {
-    //     return false;
-    // }
+    if (!lstm2.load_from_jit_module(module,"1")) {
+        return false;
+    }
     if (!one_decoder.load_from_jit_module(module)) {
         return false;
     }
@@ -555,23 +555,21 @@ bool SimpleEncoderDecoderLSTM::load_from_jit_module(torch::jit::script::Module m
 void SimpleEncoderDecoderLSTM::load_to_file(std::ofstream &outputstream) {
     one_encoder.load_to_file(outputstream);
     lstm1.load_to_file(outputstream);
-    // lstm2.load_to_file(outputstream);
+    lstm2.load_to_file(outputstream);
     one_decoder.load_to_file(outputstream);
 }
 
 void SimpleEncoderDecoderLSTM::load_from_file(std::ifstream &inputstream) {
     one_encoder.load_from_file(inputstream);
     lstm1.load_from_file(inputstream);
-    // lstm2.load_from_file(inputstream);
+    lstm2.load_from_file(inputstream);
     one_decoder.load_from_file(inputstream);
 }
 
 float SimpleEncoderDecoderLSTM::MaxAbsDifference(const SimpleEncoderDecoderLSTM &other) {
-    // return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
-    //     one_decoder.MaxAbsDifference(other.one_decoder),lstm1.MaxAbsDifference(other.lstm1),
-    //     lstm2.MaxAbsDifference(other.lstm2)});
-    return max_of_multiple({ one_decoder.MaxAbsDifference(other.one_decoder),
-        one_encoder.MaxAbsDifference(other.one_encoder),lstm1.MaxAbsDifference(other.lstm1)});
+    return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
+        one_decoder.MaxAbsDifference(other.one_decoder),lstm1.MaxAbsDifference(other.lstm1),
+        lstm2.MaxAbsDifference(other.lstm2)});
 }
 
 bool SimpleEncoderDecoderLSTM::IsEqual(const SimpleEncoderDecoderLSTM &other, float tolerance) {
@@ -701,3 +699,52 @@ bool OneLSTM::IsEqual(const OneLSTM &other, float tolerance) {
     return MaxAbsDifference(other) <= tolerance;
 }
 
+
+
+Tensor3dXf DemucsModel::forward(Tensor3dXf tensor) {
+    auto res1 = one_encoder.forward(tensor);
+    auto res2=lstm1.forward(res1.shuffle(std::array<long long, 3>{2,0,1}),hidden);
+    auto res3=lstm2.forward(res2,hidden);
+    auto res4 = one_decoder.forward(res3.shuffle(std::array<long long, 3>{1,2,0}));
+    return res4;
+}
+
+bool DemucsModel::load_from_jit_module(torch::jit::script::Module module) {
+    if (!one_encoder.load_from_jit_module(module)) {
+        return false;
+    }
+    if (!lstm1.load_from_jit_module(module,"0")) {
+        return false;
+    }
+    if (!lstm2.load_from_jit_module(module,"1")) {
+        return false;
+    }
+    if (!one_decoder.load_from_jit_module(module)) {
+        return false;
+    }
+    return true;
+}
+
+void DemucsModel::load_to_file(std::ofstream &outputstream) {
+    one_encoder.load_to_file(outputstream);
+    lstm1.load_to_file(outputstream);
+    lstm2.load_to_file(outputstream);
+    one_decoder.load_to_file(outputstream);
+}
+
+void DemucsModel::load_from_file(std::ifstream &inputstream) {
+    one_encoder.load_from_file(inputstream);
+    lstm1.load_from_file(inputstream);
+    lstm2.load_from_file(inputstream);
+    one_decoder.load_from_file(inputstream);
+}
+
+float DemucsModel::MaxAbsDifference(const DemucsModel &other) {
+    return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
+        one_decoder.MaxAbsDifference(other.one_decoder),lstm1.MaxAbsDifference(other.lstm1),
+        lstm2.MaxAbsDifference(other.lstm2)});
+}
+
+bool DemucsModel::IsEqual(const DemucsModel &other, float tolerance) {
+    return MaxAbsDifference(other) <= tolerance;
+}

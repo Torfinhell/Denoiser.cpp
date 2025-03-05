@@ -12,7 +12,6 @@ import torch as th
 from torch import nn
 from torch.nn import functional as F
 
-
 def sinc(t):
     """sinc.
 
@@ -20,15 +19,9 @@ def sinc(t):
     """
     return th.where(t == 0, th.tensor(1., device=t.device, dtype=t.dtype), th.sin(t) / t)
 
-def kernel_upsample2(zeros: int = 56) -> th.Tensor:
-    """
-    Generate a kernel for upsampling.
-    
-    Args:
-        zeros (int): The number of zeros to use in the kernel generation.
-    
-    Returns:
-        Tensor: The generated kernel.
+def kernel_upsample2(zeros:int=56):
+    """kernel_upsample2.
+
     """
     win = th.hann_window(4 * zeros + 1, periodic=False)
     winodd = win[1::2]
@@ -37,38 +30,22 @@ def kernel_upsample2(zeros: int = 56) -> th.Tensor:
     kernel = (sinc(t) * winodd).view(1, 1, -1)
     return kernel
 
-def upsample2(x: th.Tensor, zeros: int = 56) -> th.Tensor:
+
+def upsample2(x, zeros:int=56):
     """
     Upsampling the input by 2 using sinc interpolation.
-    
-    Args:
-        x (Tensor): The input tensor to be upsampled.
-        zeros (int): The number of zeros to use in the kernel generation.
-    
-    Returns:
-        Tensor: The upsampled tensor.
+    Smith, Julius, and Phil Gossett. "A flexible sampling-rate conversion method."
+    ICASSP'84. IEEE International Conference on Acoustics, Speech, and Signal Processing.
+    Vol. 9. IEEE, 1984.
     """
-    # Get the number of dimensions
-    num_dims = x.dim()
-    
-    # Ensure the input tensor has at least one dimension
-    if num_dims < 1:
-        raise ValueError("Input tensor must have at least 1 dimension.")
-    
-    # Extract the last dimension size
-    time = x.size(-1)
-    other_shape = x.shape[:-1]  # All dimensions except the last one
-
+    other, time = x.shape[:-1],x.shape[-1]
     kernel = kernel_upsample2(zeros).to(x)
-    
-    # Use an integer for padding
-    padding = zeros  # This should be an integer for symmetric padding
-    out = F.conv1d(x.view(-1, 1, time), kernel, padding=padding)[..., 1:].view(*other_shape, time)
-    
+    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(other[0],other[1], time)
     y = th.stack([x, out], dim=-1)
-    return y.view(*other_shape, -1)
+    return y.view(other[0],other[1], -1)
 
-def kernel_downsample2(zeros=56):
+
+def kernel_downsample2(zeros:int=56):
     """kernel_downsample2.
 
     """
@@ -79,8 +56,8 @@ def kernel_downsample2(zeros=56):
     kernel = (sinc(t) * winodd).view(1, 1, -1)
     return kernel
 
-def downsample2(x, zeros=56):
-    
+
+def downsample2(x, zeros:int=56):
     """
     Downsampling the input by 2 using sinc interpolation.
     Smith, Julius, and Phil Gossett. "A flexible sampling-rate conversion method."
@@ -91,15 +68,15 @@ def downsample2(x, zeros=56):
         x = F.pad(x, (0, 1))
     xeven = x[..., ::2]
     xodd = x[..., 1::2]
-    *other, time = xodd.shape
+    other, time = xodd.shape[:-1],xodd.shape[-1]
     kernel = kernel_downsample2(zeros).to(x)
     out = xeven + F.conv1d(xodd.view(-1, 1, time), kernel, padding=zeros)[..., :-1].view(
-        *other, time)
-    return out.view(*other, -1).mul(0.5)
+        other[0],other[1], time)
+    return out.view(other[0],other[1], -1).mul(0.5)
 from typing import Optional, Tuple  # <-- Added import for type annotations
 class BLSTM(nn.Module):
     ##################
-    def __init__(self, dim, layers=1, bi=True):
+    def __init__(self, dim, layers=2, bi=True):
         super().__init__()
         klass = nn.LSTM
         self.lstm = klass(bidirectional=bi, num_layers=layers, hidden_size=dim, input_size=dim)
@@ -238,12 +215,15 @@ class Demucs(nn.Module):
         if mix.dim() == 2:
             mix = mix.unsqueeze(1)
 
-        if self.normalize:
-            mono = mix.mean(dim=1, keepdim=True)
-            std = mono.std(dim=-1, keepdim=True)
-            mix = mix / (self.floor + std)
-        else:
-            std = 1
+        # if self.normalize:
+        #     mono = mix.mean(dim=1, keepdim=True)
+        #     std = mono.std(dim=-1, keepdim=True)
+        #     mix = mix / (self.floor + std)
+        # else:
+        #     std = 1
+        mono = mix.mean(dim=1, keepdim=True)
+        std = mono.std(dim=-1, keepdim=True)
+        mix = mix / (self.floor + std)
         length = mix.shape[-1]
         x = mix
         x = F.pad(x, (0, self.valid_length(length) - length))
@@ -584,6 +564,8 @@ class BasicDemucs(nn.Module):
         self.resample = resample
         self.normalize = normalize
         self.sample_rate = sample_rate
+        self.growth=growth
+        self.max_hidden=max_hidden
 
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()

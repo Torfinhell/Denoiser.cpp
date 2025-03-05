@@ -7,5 +7,6 @@ int main()
     // TestSimpleModel();
     // TestOneEncoder();
     // TestSimpleEncoderDecoder();
-    TestSimpleEncoderDecoderLSTM();
+    // TestSimpleEncoderDecoderLSTM();
+    TestDemucsModel();
 }

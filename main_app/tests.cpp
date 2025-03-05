@@ -290,7 +290,7 @@ void TestSimpleEncoderDecoderLSTM(){
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
         SimpleEncoderDecoderLSTM simple_encoder_decoder_model, loaded_model;
-        print_model_layers(model);
+        // print_model_layers(model);
         if (!simple_encoder_decoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
         }
@@ -337,5 +337,85 @@ void TestSimpleEncoderDecoderLSTM(){
         return;
     }
     std::cout << "SimpleEncoderDecoderLSTM Model Test Successfully passed"
+              << std::endl;
+}
+
+
+void TestDemucsModel(){
+    try {
+        fs::path base_path = "../tests/test_data/BasicDemucs";
+        fs::path input_path = base_path / "input.pth";
+        fs::path model_path = base_path / "model.pth";
+        fs::path prediction_path = base_path / "prediction.pth";
+        assert(fs::exists(input_path) && "Input path does not exist");
+        assert(fs::exists(model_path) && "Model path does not exist");
+        assert(fs::exists(prediction_path) && "Prediction path does not exist");
+        torch::jit::script::Module prior_input, model, prior_prediction;
+        torch::Tensor input_tensors, prediction_tensors;
+
+        try {
+            model = torch::jit::load(model_path);
+            prior_input = torch::jit::load(input_path);
+            prior_prediction = torch::jit::load(prediction_path);
+            input_tensors = prior_input.attr("prior").toTensor();
+            prediction_tensors = prior_prediction.attr("prior").toTensor();
+            std::cout << "DemucsModel Model loaded successfully" << std::endl;
+        }
+        catch (const c10::Error &e) {
+            throw std::runtime_error("Error loading the model: " +
+                                     std::string(e.what()));
+        }
+        assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
+        assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
+        Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
+        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
+        DemucsModel simple_encoder_decoder_model, loaded_model;
+        print_model_layers(model);
+        if (!simple_encoder_decoder_model.load_from_jit_module(model)) {
+            throw std::runtime_error("Couldn't load model from jit.\n");
+        }
+        std::ios::sync_with_stdio(false);
+        std::ofstream output_file(base_path / "data.txt");
+        if (!output_file) {
+            throw std::runtime_error("Error opening data.txt file!");
+        }
+        simple_encoder_decoder_model.load_to_file(output_file);
+        if (!output_file.good()) {
+            throw std::runtime_error("Error writing to file!");
+        }
+        output_file.close();
+
+        std::ifstream input_file(base_path / "data.txt");
+        if (!input_file) {
+            throw std::runtime_error("Error opening data.txt file!");
+        }
+        loaded_model.load_from_file(input_file);
+        input_file.close();
+
+        if (!simple_encoder_decoder_model.IsEqual(loaded_model, 1e-5)) {
+            throw std::runtime_error(
+                "Model is not correctly loaded. The Max difference between "
+                "their "
+                "elements: " +
+                std::to_string(simple_encoder_decoder_model.MaxAbsDifference(
+                    loaded_model)));
+        }
+        if (!TestIfEqual<Tensor3dXf>(
+                prediction, simple_encoder_decoder_model.forward(input))) {
+            throw std::runtime_error(
+                "Error: Comparison of our prediction and known output failed."
+                "The Absolute difference is: " +
+                std::to_string(MaxAbsDifference(
+                    prediction, simple_encoder_decoder_model.forward(input))));
+        }
+    }
+    catch (const std::exception &e) {
+        std::cout << "DemucsModel Model Test not passed: \n"
+                  << "Error occurred in file: " << __FILE__
+                  << " at line: " << __LINE__ << "\n"
+                  << e.what() << std::endl;
+        return;
+    }
+    std::cout << "DemucsModel Model Test Successfully passed"
               << std::endl;
 }
