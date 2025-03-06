@@ -8,5 +8,5 @@ int main()
     // TestOneEncoder();
     // TestSimpleEncoderDecoder();
     // TestSimpleEncoderDecoderLSTM();
-    TestDemucsModel();
+    TestBasicDemucsModel();
 }

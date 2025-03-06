@@ -169,21 +169,20 @@ struct SimpleEncoderDecoderLSTM : public Layer {
 };
 struct DemucsModel : public Layer {
     Tensor3dXf forward(Tensor3dXf tensor);
+    int valid_length(int length);
     bool load_from_jit_module(torch::jit::script::Module module) override;
     void load_to_file(std::ofstream &outputstream) override;
     void load_from_file(std::ifstream &inputstream) override;
     float MaxAbsDifference(const DemucsModel &other);
     bool IsEqual(const DemucsModel &other, float tolerance = 1e-5);
     ~DemucsModel() {}
-    OneEncoder one_encoder;
-    OneDecoder one_decoder;
-    OneLSTM lstm1, lstm2;
     int hidden, ch_scale, kernel_size, stride,chout;
     DemucsModel(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                          int stride = 4, int chout = 1)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride),chout(chout), one_encoder(hidden, ch_scale, kernel_size, stride),
-          one_decoder(hidden, ch_scale, kernel_size, stride)
+          stride(stride),chout(chout)
+        // ,one_encoder(hidden, ch_scale, kernel_size, stride),
+        //   one_decoder(hidden, ch_scale, kernel_size, stride)
     {
     }
 };

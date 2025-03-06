@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <cmath>
 #include <tuple>
+#include <cmath> 
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg = {
     Eigen::IndexPair<int>(1, 0)};
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_sec_transposed = {
@@ -699,50 +700,114 @@ bool OneLSTM::IsEqual(const OneLSTM &other, float tolerance) {
     return MaxAbsDifference(other) <= tolerance;
 }
 
+template<typename Tensor, int NumDim>
+void GetMean(Tensor& tensor, Tensor& result, int dim, std::array<long, NumDim> arr, int pos = 0, bool is_first_call = true) {
+    if (is_first_call) {
+        std::array<long, NumDim> dimensions = {};
+        for (int dimension = 0; dimension < NumDim; dimension++) {
+            dimensions[dimension] = tensor.dimension(dimension);
+        }
+        dimensions[dim] = 1;
+        result.resize(dimensions);
+        result.setZero();
+    }
 
+    if (pos == NumDim) {
+        std::array<long, NumDim> arr_copy = arr;
+        for (int ind = 0; ind < tensor.dimension(dim); ind++) {
+            arr[dim] = ind;
+            result(arr_copy) += tensor(arr);
+        }
+        result(arr_copy) /= tensor.dimension(dim); 
+    } else if (pos == dim) {
+        arr[dim] = 0;
+        GetMean<Tensor, NumDim>(tensor, result, dim, arr, pos + 1, false);
+    } else {
+        for (int ind = 0; ind < tensor.dimension(pos); ind++) {
+            arr[pos] = ind;
+            GetMean<Tensor, NumDim>(tensor, result, dim, arr, pos + 1, false);
+        }
+    }
+}
+template<typename Tensor, int NumDim>
+void GetStd(Tensor& tensor, Tensor& result, int dim, std::array<long, NumDim> arr, int pos = 0, bool is_first_call = true) {
+    if (is_first_call) {
+        std::array<long, NumDim> dimensions = {};
+        for (int dimension = 0; dimension < NumDim; dimension++) {
+            dimensions[dimension] = tensor.dimension(dimension);
+        }
+        dimensions[dim] = 1;
+        result.resize(dimensions);
+        result.setZero();
+    }
 
-Tensor3dXf DemucsModel::forward(Tensor3dXf tensor) {
-    auto res1 = one_encoder.forward(tensor);
-    auto res2=lstm1.forward(res1.shuffle(std::array<long long, 3>{2,0,1}),hidden);
-    auto res3=lstm2.forward(res2,hidden);
-    auto res4 = one_decoder.forward(res3.shuffle(std::array<long long, 3>{1,2,0}));
-    return res4;
+    if (pos == NumDim) {
+        std::array<long, NumDim> arr_copy = arr;
+        float mean=0;
+        for (int ind = 0; ind < tensor.dimension(dim); ind++) {
+            arr[dim] = ind;
+            mean += tensor(arr);
+        }
+        mean /= tensor.dimension(dim); 
+        for (int ind = 0; ind < tensor.dimension(dim); ind++) {
+            arr[dim] = ind;
+            result(arr_copy) += (tensor(arr)-mean)*((tensor(arr)-mean));
+        }
+        result(arr_copy)/=(tensor.dimension(dim)-1);
+        result(arr_copy)=sqrt(result(arr_copy));
+    } else if (pos == dim) {
+        arr[dim] = 0;
+        GetStd<Tensor, NumDim>(tensor, result, dim, arr, pos + 1, false);
+    } else {
+        for (int ind = 0; ind < tensor.dimension(pos); ind++) {
+            arr[pos] = ind;
+            GetStd<Tensor, NumDim>(tensor, result, dim, arr, pos + 1, false);
+        }
+    }
+}
+
+Tensor3dXf DemucsModel::forward(Tensor3dXf mix) {
+    Tensor3dXf mono,std;
+    GetMean<Tensor3dXf,3>(mix,mono, 1, indices_dim_3);
+    GetStd<Tensor3dXf,3>(mono,std, 2, indices_dim_3);
+    mix= mix/mix.constant(std(std::array<long, 3>{0,0,0})+1e-3).cast<float>();
+    int length=mix.dimension(mix.NumDimensions-1);
+    Tensor3dXf x=mix;
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0,0);
+    paddings[2] = std::make_pair(0, valid_length(length) - length);
+    Tensor3dXf padded_x=x.pad(paddings);
+    x=padded_x;
+    return x;
+}
+int DemucsModel::valid_length(int length) {
+    int depth=5;
+    for(int i=0;i<depth;i++){
+        length = static_cast<int>(std::ceil((length - kernel_size) / static_cast<double>(stride))) + 1;
+        length = std::max(length, 1);
+    }
+    for(int i=0;i<depth;i++){
+        length = (length-1)*stride+kernel_size;
+    }
+    length=static_cast<int>(std::ceil(length));
+    return length;
 }
 
 bool DemucsModel::load_from_jit_module(torch::jit::script::Module module) {
-    if (!one_encoder.load_from_jit_module(module)) {
-        return false;
-    }
-    if (!lstm1.load_from_jit_module(module,"0")) {
-        return false;
-    }
-    if (!lstm2.load_from_jit_module(module,"1")) {
-        return false;
-    }
-    if (!one_decoder.load_from_jit_module(module)) {
-        return false;
-    }
-    return true;
+   return true;
 }
 
 void DemucsModel::load_to_file(std::ofstream &outputstream) {
-    one_encoder.load_to_file(outputstream);
-    lstm1.load_to_file(outputstream);
-    lstm2.load_to_file(outputstream);
-    one_decoder.load_to_file(outputstream);
+    
 }
 
 void DemucsModel::load_from_file(std::ifstream &inputstream) {
-    one_encoder.load_from_file(inputstream);
-    lstm1.load_from_file(inputstream);
-    lstm2.load_from_file(inputstream);
-    one_decoder.load_from_file(inputstream);
+    
 }
 
 float DemucsModel::MaxAbsDifference(const DemucsModel &other) {
-    return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
-        one_decoder.MaxAbsDifference(other.one_decoder),lstm1.MaxAbsDifference(other.lstm1),
-        lstm2.MaxAbsDifference(other.lstm2)});
+    return max_of_multiple({0});
 }
 
 bool DemucsModel::IsEqual(const DemucsModel &other, float tolerance) {

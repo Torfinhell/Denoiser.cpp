@@ -341,7 +341,7 @@ void TestSimpleEncoderDecoderLSTM(){
 }
 
 
-void TestDemucsModel(){
+void TestBasicDemucsModel(){
     try {
         fs::path base_path = "../tests/test_data/BasicDemucs";
         fs::path input_path = base_path / "input.pth";
@@ -367,11 +367,12 @@ void TestDemucsModel(){
         }
         assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
         assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
+        print_model_layers(model);
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
-        DemucsModel simple_encoder_decoder_model, loaded_model;
-        print_model_layers(model);
-        if (!simple_encoder_decoder_model.load_from_jit_module(model)) {
+        // print_tensor<Tensor3dXf,3>(prediction, indices_dim_3);
+        DemucsModel demucs_model, loaded_model;
+        if (!demucs_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
         }
         std::ios::sync_with_stdio(false);
@@ -379,7 +380,7 @@ void TestDemucsModel(){
         if (!output_file) {
             throw std::runtime_error("Error opening data.txt file!");
         }
-        simple_encoder_decoder_model.load_to_file(output_file);
+        demucs_model.load_to_file(output_file);
         if (!output_file.good()) {
             throw std::runtime_error("Error writing to file!");
         }
@@ -391,22 +392,21 @@ void TestDemucsModel(){
         }
         loaded_model.load_from_file(input_file);
         input_file.close();
-
-        if (!simple_encoder_decoder_model.IsEqual(loaded_model, 1e-5)) {
+        if (!demucs_model.IsEqual(loaded_model, 1e-5)) {
             throw std::runtime_error(
                 "Model is not correctly loaded. The Max difference between "
                 "their "
                 "elements: " +
-                std::to_string(simple_encoder_decoder_model.MaxAbsDifference(
+                std::to_string(demucs_model.MaxAbsDifference(
                     loaded_model)));
         }
         if (!TestIfEqual<Tensor3dXf>(
-                prediction, simple_encoder_decoder_model.forward(input))) {
+                prediction, demucs_model.forward(input))) {
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
                 std::to_string(MaxAbsDifference(
-                    prediction, simple_encoder_decoder_model.forward(input))));
+                    prediction, demucs_model.forward(input))));
         }
     }
     catch (const std::exception &e) {
