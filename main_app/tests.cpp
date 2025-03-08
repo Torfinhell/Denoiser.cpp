@@ -200,7 +200,8 @@ void TestSimpleEncoderDecoder()
             prior_prediction = torch::jit::load(prediction_path);
             input_tensors = prior_input.attr("prior").toTensor();
             prediction_tensors = prior_prediction.attr("prior").toTensor();
-            std::cout << "SimpleEncoderDecoder Model loaded successfully" << std::endl;
+            std::cout << "SimpleEncoderDecoder Model loaded successfully"
+                      << std::endl;
         }
         catch (const c10::Error &e) {
             throw std::runtime_error("Error loading the model: " +
@@ -261,7 +262,8 @@ void TestSimpleEncoderDecoder()
               << std::endl;
 }
 
-void TestSimpleEncoderDecoderLSTM(){
+void TestSimpleEncoderDecoderLSTM()
+{
     try {
         fs::path base_path = "../tests/test_data/SimpleEncoderDecoderLSTM";
         fs::path input_path = base_path / "input.pth";
@@ -279,7 +281,8 @@ void TestSimpleEncoderDecoderLSTM(){
             prior_prediction = torch::jit::load(prediction_path);
             input_tensors = prior_input.attr("prior").toTensor();
             prediction_tensors = prior_prediction.attr("prior").toTensor();
-            std::cout << "SimpleEncoderDecoderLSTM Model loaded successfully" << std::endl;
+            std::cout << "SimpleEncoderDecoderLSTM Model loaded successfully"
+                      << std::endl;
         }
         catch (const c10::Error &e) {
             throw std::runtime_error("Error loading the model: " +
@@ -340,8 +343,8 @@ void TestSimpleEncoderDecoderLSTM(){
               << std::endl;
 }
 
-
-void TestBasicDemucsModel(){
+void TestBasicDemucsModel()
+{
     try {
         fs::path base_path = "../tests/test_data/BasicDemucs";
         fs::path input_path = base_path / "input.pth";
@@ -397,16 +400,22 @@ void TestBasicDemucsModel(){
                 "Model is not correctly loaded. The Max difference between "
                 "their "
                 "elements: " +
-                std::to_string(demucs_model.MaxAbsDifference(
-                    loaded_model)));
+                std::to_string(demucs_model.MaxAbsDifference(loaded_model)));
         }
-        if (!TestIfEqual<Tensor3dXf>(
-                prediction, demucs_model.forward(input))) {
+        if (!TestIfEqual<Tensor3dXf>(prediction, demucs_model.forward(input))) {
+            // auto output=demucs_model.forward(input);
+            // std::cout << std::fixed << std::setprecision(6);
+            // for(int i=0;i<prediction.dimension(2);i++){
+            //     if(abs(output(0,0,i)-prediction(0,0,i))>1e-5){
+            //         std::cout<<i<<" "<<output(0,0,i)<<"
+            //         "<<prediction(0,0,i)<<std::endl;
+            //     }
+            // }
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
-                std::to_string(MaxAbsDifference(
-                    prediction, demucs_model.forward(input))));
+                std::to_string(
+                    MaxAbsDifference(prediction, demucs_model.forward(input))));
         }
     }
     catch (const std::exception &e) {
@@ -416,6 +425,5 @@ void TestBasicDemucsModel(){
                   << e.what() << std::endl;
         return;
     }
-    std::cout << "DemucsModel Model Test Successfully passed"
-              << std::endl;
+    std::cout << "DemucsModel Model Test Successfully passed" << std::endl;
 }

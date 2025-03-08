@@ -41,7 +41,10 @@ def upsample2(x, zeros:int=56):
     other, time = x.shape[:-1],x.shape[-1]
     kernel = kernel_upsample2(zeros).to(x)
     out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(other[0],other[1], time)
+    print(x)
+    print(out)
     y = th.stack([x, out], dim=-1)
+    print(y)
     return y.view(other[0],other[1], -1)
 
 

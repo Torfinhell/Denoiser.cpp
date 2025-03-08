@@ -44,3 +44,4 @@ trash
 compile_flags.txt
 tests/test_data/
 .clang-format
+build/data.txt

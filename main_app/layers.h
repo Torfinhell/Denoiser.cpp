@@ -43,7 +43,7 @@ struct SimpleModel : public Layer {
 };
 struct Conv1D : public Layer {
     Tensor3dXf forward(Tensor3dXf tensor, int InputChannels, int OutputChannels,
-                       int kernel_size = 3, int stride = 1);
+                       int kernel_size = 3, int stride = 1, int padding = 0);
     bool load_from_jit_module(torch::jit::script::Module module,
                               std::string weights_index);
     void load_to_file(std::ofstream &outputstream) override;
@@ -87,11 +87,11 @@ struct OneEncoder : public Layer {
     Conv1D conv_2_1d;
     RELU relu;
     GLU glu;
-    int hidden, ch_scale, kernel_size, stride,chout;
+    int hidden, ch_scale, kernel_size, stride, chout;
     OneEncoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                int stride = 4, int chout = 1)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride),chout(chout)
+          stride(stride), chout(chout)
     {
     }
 };
@@ -111,12 +111,12 @@ struct OneDecoder : public Layer {
     OneDecoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                int stride = 4, int chout = 1)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride),chout(chout)
+          stride(stride), chout(chout)
     {
     }
 };
 struct OneLSTM : public Layer {
-    Tensor3dXf forward(Tensor3dXf tensor,int HiddenSize, bool bi=false);
+    Tensor3dXf forward(Tensor3dXf tensor, int HiddenSize, bool bi = false);
     bool load_from_jit_module(torch::jit::script::Module module,
                               std::string weights_index);
     void load_to_file(std::ofstream &outputstream) override;
@@ -124,8 +124,8 @@ struct OneLSTM : public Layer {
     float MaxAbsDifference(const OneLSTM &other);
     bool IsEqual(const OneLSTM &other, float tolerance = 1e-5);
     ~OneLSTM() {}
-    Tensor2dXf lstm_weight_ih,lstm_weight_hh;
-    Tensor2dXf lstm_bias_ih,lstm_bias_hh;
+    Tensor2dXf lstm_weight_ih, lstm_weight_hh;
+    Tensor2dXf lstm_bias_ih, lstm_bias_hh;
 }; ///
 
 struct SimpleEncoderDecoder : public Layer {
@@ -138,15 +138,16 @@ struct SimpleEncoderDecoder : public Layer {
     ~SimpleEncoderDecoder() {}
     OneEncoder one_encoder;
     OneDecoder one_decoder;
-    int hidden, ch_scale, kernel_size, stride,chout;
+    int hidden, ch_scale, kernel_size, stride, chout;
     SimpleEncoderDecoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                          int stride = 4, int chout = 1)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride),chout(chout), one_encoder(hidden, ch_scale, kernel_size, stride),
+          stride(stride), chout(chout),
+          one_encoder(hidden, ch_scale, kernel_size, stride),
           one_decoder(hidden, ch_scale, kernel_size, stride)
     {
     }
-}; 
+};
 struct SimpleEncoderDecoderLSTM : public Layer {
     Tensor3dXf forward(Tensor3dXf tensor);
     bool load_from_jit_module(torch::jit::script::Module module) override;
@@ -158,11 +159,12 @@ struct SimpleEncoderDecoderLSTM : public Layer {
     OneEncoder one_encoder;
     OneDecoder one_decoder;
     OneLSTM lstm1, lstm2;
-    int hidden, ch_scale, kernel_size, stride,chout;
-    SimpleEncoderDecoderLSTM(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
-                         int stride = 4, int chout = 1)
+    int hidden, ch_scale, kernel_size, stride, chout;
+    SimpleEncoderDecoderLSTM(int hidden = 48, int ch_scale = 2,
+                             int kernel_size = 8, int stride = 4, int chout = 1)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride),chout(chout), one_encoder(hidden, ch_scale, kernel_size, stride),
+          stride(stride), chout(chout),
+          one_encoder(hidden, ch_scale, kernel_size, stride),
           one_decoder(hidden, ch_scale, kernel_size, stride)
     {
     }
@@ -176,13 +178,13 @@ struct DemucsModel : public Layer {
     float MaxAbsDifference(const DemucsModel &other);
     bool IsEqual(const DemucsModel &other, float tolerance = 1e-5);
     ~DemucsModel() {}
-    int hidden, ch_scale, kernel_size, stride,chout;
+    int hidden, ch_scale, kernel_size, stride, chout;
     DemucsModel(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
-                         int stride = 4, int chout = 1)
+                int stride = 4, int chout = 1)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride),chout(chout)
-        // ,one_encoder(hidden, ch_scale, kernel_size, stride),
-        //   one_decoder(hidden, ch_scale, kernel_size, stride)
+          stride(stride), chout(chout)
+    // ,one_encoder(hidden, ch_scale, kernel_size, stride),
+    //   one_decoder(hidden, ch_scale, kernel_size, stride)
     {
     }
 };

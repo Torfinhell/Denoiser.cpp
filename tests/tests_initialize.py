@@ -110,7 +110,6 @@ class BasicDemucs(nn.Module):
         self.sample_rate = sample_rate
         self.growth=growth
         self.max_hidden=max_hidden
-
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()
         activation = nn.GLU(1) if glu else nn.ReLU()
@@ -148,7 +147,7 @@ class BasicDemucs(nn.Module):
         length = mix.shape[-1]
         x = mix
         x = F.pad(x, (0, self.valid_length(length) - length))
-        # x = upsample2(x)
+        x = upsample2(x)
         # x = upsample2(x)
         # skips = []
         # for encode in self.encoder:
@@ -166,6 +165,8 @@ class BasicDemucs(nn.Module):
         # x = downsample2(x)
         # x = x[..., :length]
         # return std * x
+        print(x.shape)
+        print(x)
         return x
     def valid_length(self, length:int):
         """
