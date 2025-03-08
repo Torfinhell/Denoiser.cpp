@@ -372,10 +372,9 @@ void TestBasicDemucsModel()
         }
         assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
         assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
-        print_model_layers(model);
+        // print_model_layers(model);
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
-        // print_tensor<Tensor3dXf,3>(prediction, indices_dim_3);
         DemucsModel demucs_model, loaded_model;
         if (!demucs_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");

@@ -114,28 +114,27 @@ class BasicDemucs(nn.Module):
         self.decoder = nn.ModuleList()
         activation = nn.GLU(1) if glu else nn.ReLU()
         ch_scale = 2 if glu else 1
-        # for index in range(self.depth):
-        #     encode = []
-        #     encode += [
-        #         nn.Conv1d(chin, hidden, self.kernel_size, self.stride),
-        #         nn.ReLU(),
-        #         nn.Conv1d(hidden, hidden * ch_scale, 1), activation,
-        #     ]
-        #     self.encoder.append(nn.Sequential(*encode))
+        for index in range(self.depth):
+            encode = []
+            encode += [
+                nn.Conv1d(chin, hidden, self.kernel_size, self.stride),
+                nn.ReLU(),
+                nn.Conv1d(hidden, hidden * ch_scale, 1), activation,
+            ]
+            self.encoder.append(nn.Sequential(*encode))
 
-        #     decode = []
-        #     decode += [
-        #         nn.Conv1d(hidden, ch_scale * hidden, 1), activation,
-        #         nn.ConvTranspose1d(hidden, chout, self.kernel_size, self.stride),
-        #     ]
-        #     if index > 0:
-        #         decode.append(nn.ReLU())
-        #     self.decoder.insert(0, nn.Sequential(*decode))
-        #     chout = hidden
-        #     chin = hidden
-        #     hidden = min(int(self.growth * hidden), self.max_hidden)
-
-        # self.lstm = BLSTM(chin, bi=False)#not casual false
+            decode = []
+            decode += [
+                nn.Conv1d(hidden, ch_scale * hidden, 1), activation,
+                nn.ConvTranspose1d(hidden, chout, self.kernel_size, self.stride),
+            ]
+            if index > 0:
+                decode.append(nn.ReLU())
+            self.decoder.insert(0, nn.Sequential(*decode))
+            chout = hidden
+            chin = hidden
+            hidden = min(int(self.growth * hidden), self.max_hidden)
+        self.lstm = BLSTM(chin, bi=False)#not casual false
     def forward(self, mix: th.Tensor):
         # if mix.dim() == 2:
         #     mix = mix.unsqueeze(1)
@@ -149,25 +148,22 @@ class BasicDemucs(nn.Module):
         x = F.pad(x, (0, self.valid_length(length) - length))
         x = upsample2(x)
         x = upsample2(x)
-        # skips = []
-        # for encode in self.encoder:
-        #     x = encode(x)
-        #     skips.append(x)
-        # x = x.permute(2, 0, 1)
-        # assert x.dim() == 3
-        # x, _ = self.lstm(x)
-        # x = x.permute(1, 2, 0)
-        # for decode in self.decoder:
-        #     skip = skips.pop(-1)
-        #     x = x + skip[..., :x.shape[-1]]
-        #     x = decode(x)
+        skips = []
+        for encode in self.encoder:
+            x = encode(x)
+            skips.append(x)
+        x = x.permute(2, 0, 1)
+        assert x.dim() == 3
+        x, _ = self.lstm(x)
+        x = x.permute(1, 2, 0)
+        for decode in self.decoder:
+            skip = skips.pop(-1)
+            x = x + skip[..., :x.shape[-1]]
+            x = decode(x)
         x = downsample2(x)
         x = downsample2(x)
-        # x = x[..., :length]
-        # return std * x
-        print(x.shape)
-        # print(x)
-        return x
+        x = x[..., :length]
+        return std * x
     def valid_length(self, length:int):
         """
         Return the nearest valid length to use with the model so that
@@ -186,7 +182,7 @@ class BasicDemucs(nn.Module):
         length = int(math.ceil(length))
         return int(length)
 def final_test():
-    CreateTests(BasicDemucs(), torch.randn(1, 1, 30000)
+    CreateTests(BasicDemucs(), torch.randn(1, 1, 100000)
 ,f"{AllTestsPath}/BasicDemucs")
     # sr = 16_000
     # sr_ms = sr / 1000

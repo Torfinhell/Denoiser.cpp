@@ -10,9 +10,12 @@
 #include <iomanip>
 #include <ios>
 #include <iostream>
+#include <limits>
 #include <ostream>
 #include <stdexcept>
+#include <string>
 #include <tuple>
+#include <vector>
 #define PI 3.141592653589793
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg = {
     Eigen::IndexPair<int>(1, 0)};
@@ -142,22 +145,22 @@ bool SimpleModel::IsEqual(const SimpleModel &other, float tolerance)
 
 Tensor3dXf OneEncoder::forward(Tensor3dXf tensor)
 { // проверить точно ли такой тип
-    auto res1 = conv_1_1d.forward(tensor, 1, hidden, kernel_size, stride);
+    auto res1 = conv_1_1d.forward(tensor, chin, hidden, kernel_size, stride);
     auto res2 = relu.forward(res1);
     auto res3 = conv_2_1d.forward(res2, hidden, hidden * ch_scale, 1);
     auto res4 = glu.forward(res3);
     return res4;
 }
 
-bool OneEncoder::load_from_jit_module(torch::jit::script::Module module)
+bool OneEncoder::load_from_jit_module(torch::jit::script::Module module,std::string weights_index)
 {
     try {
         for (const auto &child : module.named_children()) {
             if (child.name == "encoder") {
-                if (!conv_1_1d.load_from_jit_module(child.value, "0.0")) {
+                if (!conv_1_1d.load_from_jit_module(child.value, weights_index+".0")) {
                     return false;
                 }
-                if (!conv_2_1d.load_from_jit_module(child.value, "0.2")) {
+                if (!conv_2_1d.load_from_jit_module(child.value, weights_index+".2")) {
                     return false;
                 }
             }
@@ -353,15 +356,15 @@ Tensor3dXf OneDecoder::forward(Tensor3dXf tensor)
     return res3;
 } /////
 
-bool OneDecoder::load_from_jit_module(torch::jit::script::Module module)
+bool OneDecoder::load_from_jit_module(torch::jit::script::Module module,std::string weights_index)
 {
     try {
         for (const auto &child : module.named_children()) {
             if (child.name == "decoder") {
-                if (!conv_1_1d.load_from_jit_module(child.value, "0.0")) {
+                if (!conv_1_1d.load_from_jit_module(child.value, weights_index+".0")) {
                     return false;
                 }
-                if (!conv_tr_1_1d.load_from_jit_module(child.value, "0.2")) {
+                if (!conv_tr_1_1d.load_from_jit_module(child.value, weights_index+".2")) {
                     return false;
                 }
             }
@@ -900,20 +903,21 @@ Tensor UpSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
 template <typename Tensor, typename TensorMore, int NumDim>
 Tensor DownSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
 {
-    Tensor3dXf padded_tensor;
+    Tensor3dXf padded_tensor=tensor;
     if(tensor.dimension(NumDim - 1)%2!=0){
         Eigen::array<std::pair<int, int>, 3> paddings={};
         paddings[2] = std::make_pair(0, 1);
         padded_tensor = tensor.pad(paddings);
     }
-    std::array<long, NumDim>new_shape=tensor.dimensions();
+    std::array<long, NumDim>new_shape=padded_tensor.dimensions();
     new_shape[NumDim-1]/=2;
+
     Tensor3dXf  tensor_even(new_shape), tensor_odd(new_shape);
-    for(int i=0;i<tensor.dimension(NumDim-1);i++){
+    for(int i=0;i<padded_tensor.dimension(NumDim-1);i++){
         if(i%2==0){
-            tensor_even.chip(i/2,NumDim-1)=tensor.chip(i,NumDim-1);
+            tensor_even.chip(i/2,NumDim-1)=padded_tensor.chip(i,NumDim-1);
         }else{
-            tensor_odd.chip((i-1)/2,NumDim-1)=tensor.chip(i,NumDim-1);
+            tensor_odd.chip((i-1)/2,NumDim-1)=padded_tensor.chip(i,NumDim-1);
         }
     }
     long first_shape_size = 1, last_dimension=tensor_odd.dimension(NumDim-1);
@@ -939,19 +943,50 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
     Tensor3dXf mono, std;
     GetMean<Tensor3dXf, 3>(mix, mono, 1, indices_dim_3);
     GetStd<Tensor3dXf, 3>(mono, std, 2, indices_dim_3);
-    float constant=std(std::array<long, 3>{0, 0, 0}) + 1e-3;
-    mix = mix.unaryExpr([constant](float x){return x/constant;});
+    float std_constant=std(std::array<long, 3>{0, 0, 0});
+    mix = mix.unaryExpr([std_constant](float x){return x/(static_cast<float>(std_constant+1e-3));});
     int length = mix.dimension(mix.NumDimensions - 1);
     Tensor3dXf x = mix;
     Eigen::array<std::pair<int, int>, 3> paddings={};
     paddings[2] = std::make_pair(0, valid_length(length) - length);
     Tensor3dXf padded_x = x.pad(paddings);
     x = padded_x;
+    std::vector<Tensor3dXf>skips; 
     x=UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
     x=UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
+    std::cout<<"UpSample Successfully worked out"<<std::endl;
+    for(int i=0;i<depth;i++){
+        x=encoders[i].forward(x);
+        skips.push_back(x);
+    }
+    std::cout<<"Encoders Successfully worked out"<<std::endl;
+    auto res1 =
+        lstm1.forward(x.shuffle(std::array<long long, 3>{2, 0, 1}), lstm_hidden);
+    auto res2 = lstm2.forward(res1, lstm_hidden);
+    auto res3 =res2.shuffle(std::array<long long, 3>{1, 2, 0});
+    x=res3;
+    std::cout<<"Lstm Successfully worked out"<<std::endl;
+    RELU relu;
+    std::array<long,3>offset={};
+    std::array<long, 3>extent;
+    for(int i=0;i<depth;i++){
+        Tensor3dXf skip=skips[depth-1-i];
+        extent=skip.dimensions();
+        extent[2]=x.dimension(2);
+        x=x+skip.slice(offset, extent);
+        x=decoders[i].forward(x);
+        if(i!=depth-1){
+            x=relu.forward(x);
+        }
+    }
+    std::cout<<"Decoder Successfully worked out"<<std::endl;
     x=DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
     x=DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
-    return x;
+    std::cout<<"DownSample Successfully worked out"<<std::endl;
+    extent=x.dimensions();
+    extent[2]=length;
+    Tensor3dXf x_slice=x.slice(offset, extent);
+    return x_slice.unaryExpr([std_constant](float x){return std_constant*x;});
 }
 int DemucsModel::valid_length(int length)
 {
@@ -971,16 +1006,49 @@ int DemucsModel::valid_length(int length)
 
 bool DemucsModel::load_from_jit_module(torch::jit::script::Module module)
 {
+    for(int i=0;i<depth;i++){
+        if(!encoders[i].load_from_jit_module(module,std::to_string(i))){
+            return false;
+        }
+        if(!decoders[i].load_from_jit_module(module,std::to_string(i))){
+            return false;
+        }
+    }
+    if (!lstm1.load_from_jit_module(module, "0")) {
+        return false;
+    }
+    if (!lstm2.load_from_jit_module(module, "1")) {
+        return false;
+    }
     return true;
 }
 
-void DemucsModel::load_to_file(std::ofstream &outputstream) {}
+void DemucsModel::load_to_file(std::ofstream &outputstream) {
+    for(int i=0;i<depth;i++){
+        encoders[i].load_to_file(outputstream);
+        decoders[i].load_to_file(outputstream);
+    }
+    lstm1.load_to_file(outputstream);
+    lstm2.load_to_file(outputstream);
+}
 
-void DemucsModel::load_from_file(std::ifstream &inputstream) {}
+void DemucsModel::load_from_file(std::ifstream &inputstream) {
+    for(int i=0;i<depth;i++){
+        encoders[i].load_from_file(inputstream);
+        decoders[i].load_from_file(inputstream);
+    }
+    lstm1.load_from_file(inputstream);
+    lstm2.load_from_file(inputstream);
+}
 
 float DemucsModel::MaxAbsDifference(const DemucsModel &other)
 {
-    return max_of_multiple({0});
+    float max=0;
+    for(int i=0;i<depth;i++){
+        max=max_of_multiple({max, encoders[i].MaxAbsDifference(other.encoders[i]),
+        decoders[i].MaxAbsDifference(other.decoders[i])});
+    }
+    return max_of_multiple({max,lstm1.MaxAbsDifference(other.lstm1), lstm2.MaxAbsDifference(lstm2)});
 }
 
 bool DemucsModel::IsEqual(const DemucsModel &other, float tolerance)

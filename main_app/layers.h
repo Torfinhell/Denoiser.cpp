@@ -4,6 +4,7 @@
 #include <ATen/core/TensorBody.h>
 #include <fstream>
 #include <torch/script.h>
+#include <vector>
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg;
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_sec_transposed;
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_first_transposed;
@@ -77,7 +78,7 @@ struct GLU : public Layer {
 };
 struct OneEncoder : public Layer {
     Tensor3dXf forward(Tensor3dXf tensor);
-    bool load_from_jit_module(torch::jit::script::Module module) override;
+    bool load_from_jit_module(torch::jit::script::Module module,std::string weights_index = "0");
     void load_to_file(std::ofstream &outputstream) override;
     void load_from_file(std::ifstream &inputstream) override;
     float MaxAbsDifference(const OneEncoder &other);
@@ -87,18 +88,18 @@ struct OneEncoder : public Layer {
     Conv1D conv_2_1d;
     RELU relu;
     GLU glu;
-    int hidden, ch_scale, kernel_size, stride, chout;
+    int hidden, ch_scale, kernel_size, stride, chout,chin;
     OneEncoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
-               int stride = 4, int chout = 1)
+               int stride = 4, int chout = 1,int chin=1)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride), chout(chout)
+          stride(stride), chout(chout),chin(chin)
     {
     }
 };
 
 struct OneDecoder : public Layer {
     Tensor3dXf forward(Tensor3dXf tensor);
-    bool load_from_jit_module(torch::jit::script::Module module) override;
+    bool load_from_jit_module(torch::jit::script::Module module,std::string weights_index="0");
     void load_to_file(std::ofstream &outputstream) override;
     void load_from_file(std::ifstream &inputstream) override;
     float MaxAbsDifference(const OneDecoder &other);
@@ -178,13 +179,31 @@ struct DemucsModel : public Layer {
     float MaxAbsDifference(const DemucsModel &other);
     bool IsEqual(const DemucsModel &other, float tolerance = 1e-5);
     ~DemucsModel() {}
-    int hidden, ch_scale, kernel_size, stride, chout;
+    std::vector<OneDecoder>decoders;
+    std::vector<OneEncoder>encoders;
+    OneLSTM lstm1, lstm2;
+    int hidden, ch_scale, kernel_size, stride, chout,depth;
+    int lstm_hidden;
     DemucsModel(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
-                int stride = 4, int chout = 1)
+                int stride = 4, int chout = 1,int depth=5, int chin=1,
+                int max_hidden=10000, int growth=2)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride), chout(chout)
-    // ,one_encoder(hidden, ch_scale, kernel_size, stride),
-    //   one_decoder(hidden, ch_scale, kernel_size, stride)
+          stride(stride), chout(chout),depth(depth)
     {
+        for(int i=0;i<depth;i++){
+            encoders.emplace_back( hidden, ch_scale , kernel_size ,
+                 stride,  chout , chin);
+            decoders.emplace_back(hidden, ch_scale, kernel_size,
+                stride, chout);
+            chout = hidden;
+            chin = hidden;
+            hidden = std::min(int(growth * hidden), max_hidden);
+        }
+        std::reverse(decoders.begin(), decoders.end());
+        lstm_hidden=chin;
     }
+//     OneEncoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
+//         int stride = 4, int chout = 1,int chin=1)
+//  : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+//    stride(stride), chout(chout),chin(chin)
 };
