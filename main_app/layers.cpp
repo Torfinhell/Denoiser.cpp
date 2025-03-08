@@ -7,6 +7,8 @@
 #include <cassert>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
+#include <ios>
 #include <iostream>
 #include <ostream>
 #include <stdexcept>
@@ -765,11 +767,12 @@ void GetMean(Tensor &tensor, Tensor &result, int dim,
 
     if (pos == NumDim) {
         std::array<long, NumDim> arr_copy = arr;
+        double sum=0;
         for (int ind = 0; ind < tensor.dimension(dim); ind++) {
             arr[dim] = ind;
-            result(arr_copy) += tensor(arr);
+            sum += tensor(arr);
         }
-        result(arr_copy) /= tensor.dimension(dim);
+        result(arr_copy) = sum/tensor.dimension(dim);
     }
     else if (pos == dim) {
         arr[dim] = 0;
@@ -799,18 +802,24 @@ void GetStd(Tensor &tensor, Tensor &result, int dim,
 
     if (pos == NumDim) {
         std::array<long, NumDim> arr_copy = arr;
-        float mean = 0;
-        for (int ind = 0; ind < tensor.dimension(dim); ind++) {
+        double mean = 0;
+        long count = tensor.dimension(dim);
+        for (int ind = 0; ind < count; ind++) {
             arr[dim] = ind;
             mean += tensor(arr);
         }
-        mean /= tensor.dimension(dim);
-        for (int ind = 0; ind < tensor.dimension(dim); ind++) {
+        mean /= count;
+        for (int ind = 0; ind < count; ind++) {
             arr[dim] = ind;
-            result(arr_copy) += (tensor(arr) - mean) * ((tensor(arr) - mean));
+            double diff = tensor(arr) - mean;
+            result(arr_copy) += diff * diff;
         }
-        result(arr_copy) /= (tensor.dimension(dim) - 1);
-        result(arr_copy) = sqrt(result(arr_copy));
+        if (count > 1) {
+            result(arr_copy) /= (count-1);
+            result(arr_copy) = sqrt(result(arr_copy)); 
+        } else {
+            result(arr_copy) = 0;
+        }
     }
     else if (pos == dim) {
         arr[dim] = 0;
@@ -823,6 +832,7 @@ void GetStd(Tensor &tensor, Tensor &result, int dim,
         }
     }
 }
+
 
 Tensor3dXf KernelUpsample2(int zeros = 56)
 {
@@ -884,24 +894,64 @@ Tensor UpSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
     new_shape[NumDim] = 1;
     TensorMore stacked_reshaped = stacked.reshape(new_shape);
     Tensor y = stacked_reshaped.chip(0, NumDim);
-    return y; ///////большая ошибка копится
+    return y; 
+}
+
+template <typename Tensor, typename TensorMore, int NumDim>
+Tensor DownSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
+{
+    Tensor3dXf padded_tensor;
+    if(tensor.dimension(NumDim - 1)%2!=0){
+        Eigen::array<std::pair<int, int>, 3> paddings={};
+        paddings[2] = std::make_pair(0, 1);
+        padded_tensor = tensor.pad(paddings);
+    }
+    std::array<long, NumDim>new_shape=tensor.dimensions();
+    new_shape[NumDim-1]/=2;
+    Tensor3dXf  tensor_even(new_shape), tensor_odd(new_shape);
+    for(int i=0;i<tensor.dimension(NumDim-1);i++){
+        if(i%2==0){
+            tensor_even.chip(i/2,NumDim-1)=tensor.chip(i,NumDim-1);
+        }else{
+            tensor_odd.chip((i-1)/2,NumDim-1)=tensor.chip(i,NumDim-1);
+        }
+    }
+    long first_shape_size = 1, last_dimension=tensor_odd.dimension(NumDim-1);
+    for (long i = 0; i < NumDim - 1; i++) {
+        first_shape_size *= tensor_odd.dimension(i);
+    }
+    Tensor kernel = KernelUpsample2(zeros);
+    Conv1D conv;
+    conv.conv_weights = kernel;
+    conv.conv_bias.resize(std::array<long, 1>{1});
+    conv.conv_bias.setZero();
+    Tensor3dXf res = conv.forward(tensor_odd.reshape(std::array<long, 3>{
+                                      first_shape_size, 1, last_dimension}),
+                                  1, 1, kernel.dimension(2), 1, zeros);
+    std::array<long, NumDim> extent=res.dimensions();
+    extent[NumDim - 1]--;
+    std::array<long, NumDim> offset = {};
+    Tensor out = res.slice(offset, extent).reshape(tensor_odd.dimensions());
+    return (tensor_even+out).unaryExpr([](float x){return x/2;}); 
 }
 Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
 {
     Tensor3dXf mono, std;
     GetMean<Tensor3dXf, 3>(mix, mono, 1, indices_dim_3);
     GetStd<Tensor3dXf, 3>(mono, std, 2, indices_dim_3);
-    mix = mix /
-          mix.constant(std(std::array<long, 3>{0, 0, 0}) + 1e-3).cast<float>();
+    float constant=std(std::array<long, 3>{0, 0, 0}) + 1e-3;
+    mix = mix.unaryExpr([constant](float x){return x/constant;});
     int length = mix.dimension(mix.NumDimensions - 1);
     Tensor3dXf x = mix;
-    Eigen::array<std::pair<int, int>, 3> paddings;
-    paddings[0] = std::make_pair(0, 0);
-    paddings[1] = std::make_pair(0, 0);
+    Eigen::array<std::pair<int, int>, 3> paddings={};
     paddings[2] = std::make_pair(0, valid_length(length) - length);
     Tensor3dXf padded_x = x.pad(paddings);
     x = padded_x;
-    return UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
+    x=UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
+    x=UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
+    x=DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
+    x=DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
+    return x;
 }
 int DemucsModel::valid_length(int length)
 {

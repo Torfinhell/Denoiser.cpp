@@ -4,6 +4,8 @@
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <iomanip>
+#include <ios>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -403,14 +405,8 @@ void TestBasicDemucsModel()
                 std::to_string(demucs_model.MaxAbsDifference(loaded_model)));
         }
         if (!TestIfEqual<Tensor3dXf>(prediction, demucs_model.forward(input))) {
-            // auto output=demucs_model.forward(input);
-            // std::cout << std::fixed << std::setprecision(6);
-            // for(int i=0;i<prediction.dimension(2);i++){
-            //     if(abs(output(0,0,i)-prediction(0,0,i))>1e-5){
-            //         std::cout<<i<<" "<<output(0,0,i)<<"
-            //         "<<prediction(0,0,i)<<std::endl;
-            //     }
-            // }
+            std::ofstream file1("data1.txt");
+            file1<<prediction;
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +

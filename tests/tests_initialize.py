@@ -20,13 +20,13 @@ def CreateTests(model, input:TensorContainer, path:TensorContainer, predictions=
     os.makedirs(path, exist_ok=True)
     if(predictions is None):
         predictions=model(input)
-    # print(input.shape)
+    # print(input)
     # for layer in model.encoder:
     #     if isinstance(layer, nn.Sequential):
     #         for sub_layer in layer:
     #             if isinstance(sub_layer, nn.Conv1d):
     #                 print("Convolutional weights:", sub_layer.weight.data)
-    # print(predictions.shape)
+    # print(predictions)
     save_data_to_file(createTensorContainer(predictions), f"{path}/prediction.pth")
     save_data_to_file(model, f"{path}/model.pth")
     save_data_to_file(createTensorContainer(input), f"{path}/input.pth")
@@ -148,7 +148,7 @@ class BasicDemucs(nn.Module):
         x = mix
         x = F.pad(x, (0, self.valid_length(length) - length))
         x = upsample2(x)
-        # x = upsample2(x)
+        x = upsample2(x)
         # skips = []
         # for encode in self.encoder:
         #     x = encode(x)
@@ -161,12 +161,12 @@ class BasicDemucs(nn.Module):
         #     skip = skips.pop(-1)
         #     x = x + skip[..., :x.shape[-1]]
         #     x = decode(x)
-        # x = downsample2(x)
-        # x = downsample2(x)
+        x = downsample2(x)
+        x = downsample2(x)
         # x = x[..., :length]
         # return std * x
         print(x.shape)
-        print(x)
+        # print(x)
         return x
     def valid_length(self, length:int):
         """
@@ -186,7 +186,7 @@ class BasicDemucs(nn.Module):
         length = int(math.ceil(length))
         return int(length)
 def final_test():
-    CreateTests(BasicDemucs(), torch.randn(1, 200, 1000)
+    CreateTests(BasicDemucs(), torch.randn(1, 1, 30000)
 ,f"{AllTestsPath}/BasicDemucs")
     # sr = 16_000
     # sr_ms = sr / 1000
