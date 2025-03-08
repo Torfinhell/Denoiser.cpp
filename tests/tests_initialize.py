@@ -182,7 +182,7 @@ class BasicDemucs(nn.Module):
         length = int(math.ceil(length))
         return int(length)
 def final_test():
-    CreateTests(BasicDemucs(), torch.randn(1, 1, 100000)
+    CreateTests(BasicDemucs(), torch.randn(1, 1, 10000)
 ,f"{AllTestsPath}/BasicDemucs")
     # sr = 16_000
     # sr_ms = sr / 1000

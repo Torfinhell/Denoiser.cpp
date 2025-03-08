@@ -405,7 +405,7 @@ void TestBasicDemucsModel()
         }
         if (!TestIfEqual<Tensor3dXf>(prediction, demucs_model.forward(input))) {
             std::ofstream file1("data1.txt");
-            file1<<prediction;
+            file1 << prediction;
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
