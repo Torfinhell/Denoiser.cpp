@@ -173,23 +173,24 @@ class BasicDemucs(nn.Module):
         If the mixture has a valid length, the estimated sources
         will have exactly the same length.
         """
-        length = math.ceil(length)
+        length = math.ceil(length*self.resample)
         for idx in range(self.depth):
             length = math.ceil((length - self.kernel_size) / self.stride) + 1
             length = max(length, 1)
         for idx in range(self.depth):
             length = (length - 1) * self.stride + self.kernel_size
-        length = int(math.ceil(length))
+        length = int(math.ceil(length / self.resample))
         return int(length)
 def final_test():
-    CreateTests(BasicDemucs(), torch.randn(1, 1, 10000)
+    CreateTests(BasicDemucs(), torch.randn(1, 1, 256)
 ,f"{AllTestsPath}/BasicDemucs")
-    # sr = 16_000
-    # sr_ms = sr / 1000
-    # demucs = dns48()
+    sr = 16_000
+    sr_ms = sr / 1000
+    demucs = dns48()
     # x = th.randn(1, int(sr * 4)).to("cpu")
+    x = th.randn(1, int(256)).to("cpu")
     # out = demucs(x[None])[0]
-    # CreateTests(demucs, x, f"{AllTestsPath}/dns48", out)
+    CreateTests(demucs, x[None], f"{AllTestsPath}/dns48")
 if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
     # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")

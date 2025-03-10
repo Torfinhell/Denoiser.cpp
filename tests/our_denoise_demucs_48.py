@@ -140,14 +140,10 @@ class Demucs(nn.Module):
                  max_hidden=10_000,
                  normalize=True,
                  glu=True,
-                 rescale=0.1,
                  floor=1e-3,
                  sample_rate=16_000):
 
         super().__init__()
-        if resample not in [1, 2, 4]:
-            raise ValueError("Resample should be 1, 2 or 4.")
-
         self.chin = chin
         self.chout = chout
         self.hidden = hidden
@@ -159,16 +155,16 @@ class Demucs(nn.Module):
         self.resample = resample
         self.normalize = normalize
         self.sample_rate = sample_rate
-
+        self.growth=growth
+        self.max_hidden=max_hidden
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()
         activation = nn.GLU(1) if glu else nn.ReLU()
         ch_scale = 2 if glu else 1
-
-        for index in range(depth):
+        for index in range(self.depth):
             encode = []
             encode += [
-                nn.Conv1d(chin, hidden, kernel_size, stride),
+                nn.Conv1d(chin, hidden, self.kernel_size, self.stride),
                 nn.ReLU(),
                 nn.Conv1d(hidden, hidden * ch_scale, 1), activation,
             ]
@@ -177,18 +173,15 @@ class Demucs(nn.Module):
             decode = []
             decode += [
                 nn.Conv1d(hidden, ch_scale * hidden, 1), activation,
-                nn.ConvTranspose1d(hidden, chout, kernel_size, stride),
+                nn.ConvTranspose1d(hidden, chout, self.kernel_size, self.stride),
             ]
             if index > 0:
                 decode.append(nn.ReLU())
             self.decoder.insert(0, nn.Sequential(*decode))
             chout = hidden
             chin = hidden
-            hidden = min(int(growth * hidden), max_hidden)
-
-        self.lstm = BLSTM(chin, bi=not causal)#not casual false
-        if rescale:
-            rescale_module(self, reference=rescale)
+            hidden = min(int(self.growth * hidden), self.max_hidden)
+        self.lstm = BLSTM(chin, bi=False)#not casual false
 
     def valid_length(self, length:int):
         """
@@ -213,26 +206,18 @@ class Demucs(nn.Module):
         return self.stride ** self.depth // self.resample
 
     def forward(self, mix: th.Tensor) -> th.Tensor:
-        if mix.dim() == 2:
-            mix = mix.unsqueeze(1)
+        # if mix.dim() == 2:
+        #     mix = mix.unsqueeze(1)
 
-        # if self.normalize:
-        #     mono = mix.mean(dim=1, keepdim=True)
-        #     std = mono.std(dim=-1, keepdim=True)
-        #     mix = mix / (self.floor + std)
-        # else:
-        #     std = 1
+        #self.normalize=true
         mono = mix.mean(dim=1, keepdim=True)
         std = mono.std(dim=-1, keepdim=True)
         mix = mix / (self.floor + std)
         length = mix.shape[-1]
         x = mix
         x = F.pad(x, (0, self.valid_length(length) - length))
-        if self.resample == 2:
-            x = upsample2(x)
-        elif self.resample == 4:
-            x = upsample2(x)
-            x = upsample2(x)
+        x = upsample2(x)
+        x = upsample2(x)
         skips = []
         for encode in self.encoder:
             x = encode(x)
@@ -245,12 +230,8 @@ class Demucs(nn.Module):
             skip = skips.pop(-1)
             x = x + skip[..., :x.shape[-1]]
             x = decode(x)
-        if self.resample == 2:
-            x = downsample2(x)
-        elif self.resample == 4:
-            x = downsample2(x)
-            x = downsample2(x)
-
+        x = downsample2(x)
+        x = downsample2(x)
         x = x[..., :length]
         return std * x
 

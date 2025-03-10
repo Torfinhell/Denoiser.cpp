@@ -16,6 +16,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <chrono>
 #define PI 3.141592653589793
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg = {
     Eigen::IndexPair<int>(1, 0)};
@@ -946,8 +947,11 @@ Tensor DownSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
     Tensor out = res.slice(offset, extent).reshape(tensor_odd.dimensions());
     return (tensor_even + out).unaryExpr([](float x) { return x / 2; });
 }
+
 Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
 {
+    auto start_time = std::chrono::high_resolution_clock::now();
+
     Tensor3dXf mono, std;
     GetMean<Tensor3dXf, 3>(mix, mono, 1, indices_dim_3);
     GetStd<Tensor3dXf, 3>(mono, std, 2, indices_dim_3);
@@ -955,30 +959,54 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
     mix = mix.unaryExpr([std_constant](float x) {
         return x / (static_cast<float>(std_constant + 1e-3));
     });
+
     int length = mix.dimension(mix.NumDimensions - 1);
     Tensor3dXf x = mix;
     Eigen::array<std::pair<int, int>, 3> paddings = {};
     paddings[2] = std::make_pair(0, valid_length(length) - length);
     Tensor3dXf padded_x = x.pad(paddings);
     x = padded_x;
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed_time = end_time - start_time;
+    std::cout << "Padding and normalization completed in " << elapsed_time.count() << " seconds." << std::endl;
+
+    start_time = std::chrono::high_resolution_clock::now();
+
     std::vector<Tensor3dXf> skips;
     x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
     x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
-    std::cout << "UpSample Successfully worked out" << std::endl;
+    end_time = std::chrono::high_resolution_clock::now();
+    elapsed_time = end_time - start_time;
+    std::cout << "UpSample Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+
+    start_time = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < depth; i++) {
         x = encoders[i].forward(x);
         skips.push_back(x);
     }
-    std::cout << "Encoders Successfully worked out" << std::endl;
-    auto res1 = lstm1.forward(x.shuffle(std::array<long long, 3>{2, 0, 1}),
-                              lstm_hidden);
+    end_time = std::chrono::high_resolution_clock::now();
+    elapsed_time = end_time - start_time;
+    std::cout << "Encoders Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+
+    start_time = std::chrono::high_resolution_clock::now();
+
+    auto res1 = lstm1.forward(x.shuffle(std::array<long long, 3>{2, 0, 1}), lstm_hidden);
     auto res2 = lstm2.forward(res1, lstm_hidden);
     auto res3 = res2.shuffle(std::array<long long, 3>{1, 2, 0});
     x = res3;
-    std::cout << "Lstm Successfully worked out" << std::endl;
+
+    end_time = std::chrono::high_resolution_clock::now();
+    elapsed_time = end_time - start_time;
+    std::cout << "LSTM Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+
     RELU relu;
     std::array<long, 3> offset = {};
     std::array<long, 3> extent;
+
+    start_time = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < depth; i++) {
         Tensor3dXf skip = skips[depth - 1 - i];
         extent = skip.dimensions();
@@ -989,19 +1017,29 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
             x = relu.forward(x);
         }
     }
-    std::cout << "Decoder Successfully worked out" << std::endl;
+
+    end_time = std::chrono::high_resolution_clock::now();
+    elapsed_time = end_time - start_time;
+    std::cout << "Decoder Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+
+    start_time = std::chrono::high_resolution_clock::now();
+
     x = DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
     x = DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
-    std::cout << "DownSample Successfully worked out" << std::endl;
+    end_time = std::chrono::high_resolution_clock::now();
+    elapsed_time = end_time - start_time;
+    std::cout << "DownSample Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+
     extent = x.dimensions();
     extent[2] = length;
+   
     Tensor3dXf x_slice = x.slice(offset, extent);
     return x_slice.unaryExpr(
         [std_constant](float x) { return std_constant * x; });
 }
 int DemucsModel::valid_length(int length)
 {
-    int depth = 5;
+    length=length*resample;
     for (int i = 0; i < depth; i++) {
         length = static_cast<int>(std::ceil((length - kernel_size) /
                                             static_cast<double>(stride))) +
@@ -1011,7 +1049,7 @@ int DemucsModel::valid_length(int length)
     for (int i = 0; i < depth; i++) {
         length = (length - 1) * stride + kernel_size;
     }
-    length = static_cast<int>(std::ceil(length));
+    length = static_cast<int>(std::ceil(length/resample));
     return length;
 }
 
