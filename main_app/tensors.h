@@ -18,6 +18,7 @@ typedef Vector<Eigen::half, Dynamic> VectorXh;
 
 typedef Matrix<Eigen::half, Dynamic, Dynamic, Eigen::RowMajor> MatrixXh;
 
+typedef Tensor<float, 5> Tensor5dXf;
 typedef Tensor<float, 4> Tensor4dXf;
 typedef Tensor<float, 3> Tensor3dXf;
 typedef Tensor<float, 2> Tensor2dXf;

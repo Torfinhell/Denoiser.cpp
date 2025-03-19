@@ -1,10 +1,14 @@
 #include "layers.h"
+#include "Eigen/src/Core/util/Constants.h"
+#include "Eigen/src/Core/util/Meta.h"
 #include "denoiser.h"
 #include "tensors.h"
 #include "tests.h"
+#include "unsupported/Eigen/CXX11/src/Tensor/TensorTraits.h"
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -16,7 +20,6 @@
 #include <string>
 #include <tuple>
 #include <vector>
-#include <chrono>
 #define PI 3.141592653589793
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg = {
     Eigen::IndexPair<int>(1, 0)};
@@ -146,10 +149,49 @@ bool SimpleModel::IsEqual(const SimpleModel &other, float tolerance)
 
 Tensor3dXf OneEncoder::forward(Tensor3dXf tensor)
 {
+    // Log the initial tensor shape
+    // std::cout << "Input tensor shape: " << tensor.dimensions() << std::endl;
+
+    // Measure time for conv_1_1d
+    auto start = std::chrono::high_resolution_clock::now();
     auto res1 = conv_1_1d.forward(tensor, chin, hidden, kernel_size, stride);
+    auto end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time for conv_1_1d: "
+    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
+    //                                                                    start)
+    //                  .count()
+    //           << " microseconds" << std::endl;
+
+    // Measure time for relu
+    start = std::chrono::high_resolution_clock::now();
     auto res2 = relu.forward(res1);
+    end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time for relu: "
+    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
+    //                                                                    start)
+    //                  .count()
+    //           << " microseconds" << std::endl;
+    // std::cout << "Input tensor shape in conv2: " << res2.dimensions() << std::endl;
+    // Measure time for conv_2_1d
+    start = std::chrono::high_resolution_clock::now();
     auto res3 = conv_2_1d.forward(res2, hidden, hidden * ch_scale, 1);
+    end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time for conv_2_1d: "
+    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
+    //                                                                    start)
+    //                  .count()
+    //           << " microseconds" << std::endl;
+
+    // Measure time for glu
+    start = std::chrono::high_resolution_clock::now();
     auto res4 = glu.forward(res3);
+    end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time for glu: "
+    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
+    //                                                                    start)
+    //                  .count()
+    //           << " microseconds" << std::endl;
+
     return res4;
 }
 
@@ -224,34 +266,27 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
     paddings[2] = std::make_pair(padding, padding);
 
     Tensor3dXf padded_tensor = tensor.pad(paddings);
-    tensor = padded_tensor;
-
+    tensor = padded_tensor;//ColMajor
     assert(kernel_size > 0 && kernel_size <= padded_length);
     assert(stride > 0 && stride <= padded_length);
-
-    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
-    newtensor.setZero();
-
-    for (int channel = 0; channel < OutputChannels; channel++) {
-        for (int batch = 0; batch < batch_size; batch++) {
-            int counter = 0;
-            for (int pos = 0; pos + kernel_size <= padded_length;
-                 pos += stride, counter++) {
-                assert(counter < new_length);
-                for (int i = 0; i < kernel_size; i++) {
-                    for (int input_channel = 0; input_channel < InputChannels;
-                         input_channel++) {
-                        newtensor(batch, channel, counter) +=
-                            tensor(batch, input_channel, pos + i) *
-                            conv_weights(channel, input_channel, i);
-                    }
-                }
-                newtensor(batch, channel, counter) += conv_bias(channel);
-            }
-            assert(counter == new_length);
-        }
+    Tensor4dXf big_tensor(1, tensor.dimension(0),tensor.dimension(1),tensor.dimension(2));
+    big_tensor.chip(0,0)=tensor;
+    Tensor4dXf big_tensor_shuffled=big_tensor.shuffle(std::array<long long, 4>{1,2,3,0});
+    big_tensor=big_tensor_shuffled;
+    Tensor5dXf extracted_images=big_tensor.extract_image_patches(InputChannels, kernel_size, InputChannels, stride,1,1,PaddingType::PADDING_VALID);
+    Tensor5dXf extracted_images_shuffle=extracted_images.shuffle(std::array<long long,5>{4,0,1,2,3});
+    Tensor4dXf get_patches=extracted_images_shuffle.chip(0,0);
+    Tensor3dXf output_tensor(OutputChannels, batch_size, new_length);
+    Eigen::array<ptrdiff_t, 2> dims({1, 2});
+    for(int output_channel=0;output_channel<OutputChannels;output_channel++){
+        Tensor4dXf res=get_patches.convolve(conv_weights.chip(output_channel,0), dims);
+        Tensor2dXf res2=res.shuffle(std::array<long long, 4>{1,2, 0,3}).chip(0,0).chip(0,0);
+        output_tensor.chip(output_channel,0)=res2;
+        output_tensor.chip(output_channel,0)+=res2.setConstant(conv_bias(output_channel));
     }
-    return newtensor;
+    Tensor3dXf ans(batch_size, OutputChannels,new_length);
+    ans=output_tensor.shuffle(std::array<long long, 3>{1,0,2});
+    return ans;
 }
 
 bool Conv1D::load_from_jit_module(torch::jit::script::Module module,
@@ -969,7 +1004,8 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
 
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;
-    std::cout << "Padding and normalization completed in " << elapsed_time.count() << " seconds." << std::endl;
+    std::cout << "Padding and normalization completed in "
+              << elapsed_time.count() << " seconds." << std::endl;
 
     start_time = std::chrono::high_resolution_clock::now();
 
@@ -978,7 +1014,8 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
     x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
     end_time = std::chrono::high_resolution_clock::now();
     elapsed_time = end_time - start_time;
-    std::cout << "UpSample Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+    std::cout << "UpSample Successfully worked out in " << elapsed_time.count()
+              << " seconds." << std::endl;
 
     start_time = std::chrono::high_resolution_clock::now();
 
@@ -988,18 +1025,21 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
     }
     end_time = std::chrono::high_resolution_clock::now();
     elapsed_time = end_time - start_time;
-    std::cout << "Encoders Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+    std::cout << "Encoders Successfully worked out in " << elapsed_time.count()
+              << " seconds." << std::endl;
 
     start_time = std::chrono::high_resolution_clock::now();
 
-    auto res1 = lstm1.forward(x.shuffle(std::array<long long, 3>{2, 0, 1}), lstm_hidden);
+    auto res1 = lstm1.forward(x.shuffle(std::array<long long, 3>{2, 0, 1}),
+                              lstm_hidden);
     auto res2 = lstm2.forward(res1, lstm_hidden);
     auto res3 = res2.shuffle(std::array<long long, 3>{1, 2, 0});
     x = res3;
 
     end_time = std::chrono::high_resolution_clock::now();
     elapsed_time = end_time - start_time;
-    std::cout << "LSTM Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+    std::cout << "LSTM Successfully worked out in " << elapsed_time.count()
+              << " seconds." << std::endl;
 
     RELU relu;
     std::array<long, 3> offset = {};
@@ -1020,7 +1060,8 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
 
     end_time = std::chrono::high_resolution_clock::now();
     elapsed_time = end_time - start_time;
-    std::cout << "Decoder Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+    std::cout << "Decoder Successfully worked out in " << elapsed_time.count()
+              << " seconds." << std::endl;
 
     start_time = std::chrono::high_resolution_clock::now();
 
@@ -1028,18 +1069,19 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
     x = DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
     end_time = std::chrono::high_resolution_clock::now();
     elapsed_time = end_time - start_time;
-    std::cout << "DownSample Successfully worked out in " << elapsed_time.count() << " seconds." << std::endl;
+    std::cout << "DownSample Successfully worked out in "
+              << elapsed_time.count() << " seconds." << std::endl;
 
     extent = x.dimensions();
     extent[2] = length;
-   
+
     Tensor3dXf x_slice = x.slice(offset, extent);
     return x_slice.unaryExpr(
         [std_constant](float x) { return std_constant * x; });
 }
 int DemucsModel::valid_length(int length)
 {
-    length=length*resample;
+    length = length * resample;
     for (int i = 0; i < depth; i++) {
         length = static_cast<int>(std::ceil((length - kernel_size) /
                                             static_cast<double>(stride))) +
@@ -1049,7 +1091,7 @@ int DemucsModel::valid_length(int length)
     for (int i = 0; i < depth; i++) {
         length = (length - 1) * stride + kernel_size;
     }
-    length = static_cast<int>(std::ceil(length/resample));
+    length = static_cast<int>(std::ceil(length / resample));
     return length;
 }
 

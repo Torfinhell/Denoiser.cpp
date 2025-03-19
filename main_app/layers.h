@@ -188,9 +188,9 @@ struct DemucsModel : public Layer {
     int lstm_hidden;
     DemucsModel(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                 int stride = 4, int chout = 1, int depth = 5, int chin = 1,
-                int max_hidden = 10000, int growth = 2, int resample =4)
+                int max_hidden = 10000, int growth = 2, int resample = 4)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride), chout(chout), depth(depth),resample(resample)
+          stride(stride), chout(chout), depth(depth), resample(resample)
     {
         for (int i = 0; i < depth; i++) {
             encoders.emplace_back(hidden, ch_scale, kernel_size, stride, chout,
