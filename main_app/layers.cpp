@@ -5,6 +5,7 @@
 #include "tensors.h"
 #include "tests.h"
 #include "unsupported/Eigen/CXX11/src/Tensor/TensorTraits.h"
+#include "unsupported/Eigen/FFT"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -171,8 +172,8 @@ Tensor3dXf OneEncoder::forward(Tensor3dXf tensor)
     //                                                                    start)
     //                  .count()
     //           << " microseconds" << std::endl;
-    // std::cout << "Input tensor shape in conv2: " << res2.dimensions() << std::endl;
-    // Measure time for conv_2_1d
+    // std::cout << "Input tensor shape in conv2: " << res2.dimensions() <<
+    // std::endl; Measure time for conv_2_1d
     start = std::chrono::high_resolution_clock::now();
     auto res3 = conv_2_1d.forward(res2, hidden, hidden * ch_scale, 1);
     end = std::chrono::high_resolution_clock::now();
@@ -266,27 +267,34 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
     paddings[2] = std::make_pair(padding, padding);
 
     Tensor3dXf padded_tensor = tensor.pad(paddings);
-    tensor = padded_tensor;//ColMajor
+    tensor = padded_tensor;
+
     assert(kernel_size > 0 && kernel_size <= padded_length);
     assert(stride > 0 && stride <= padded_length);
-    Tensor4dXf big_tensor(1, tensor.dimension(0),tensor.dimension(1),tensor.dimension(2));
-    big_tensor.chip(0,0)=tensor;
-    Tensor4dXf big_tensor_shuffled=big_tensor.shuffle(std::array<long long, 4>{1,2,3,0});
-    big_tensor=big_tensor_shuffled;
-    Tensor5dXf extracted_images=big_tensor.extract_image_patches(InputChannels, kernel_size, InputChannels, stride,1,1,PaddingType::PADDING_VALID);
-    Tensor5dXf extracted_images_shuffle=extracted_images.shuffle(std::array<long long,5>{4,0,1,2,3});
-    Tensor4dXf get_patches=extracted_images_shuffle.chip(0,0);
-    Tensor3dXf output_tensor(OutputChannels, batch_size, new_length);
-    Eigen::array<ptrdiff_t, 2> dims({1, 2});
-    for(int output_channel=0;output_channel<OutputChannels;output_channel++){
-        Tensor4dXf res=get_patches.convolve(conv_weights.chip(output_channel,0), dims);
-        Tensor2dXf res2=res.shuffle(std::array<long long, 4>{1,2, 0,3}).chip(0,0).chip(0,0);
-        output_tensor.chip(output_channel,0)=res2;
-        output_tensor.chip(output_channel,0)+=res2.setConstant(conv_bias(output_channel));
+
+    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    newtensor.setZero();
+
+    for (int channel = 0; channel < OutputChannels; channel++) {
+        for (int batch = 0; batch < batch_size; batch++) {
+            int counter = 0;
+            for (int pos = 0; pos + kernel_size <= padded_length;
+                 pos += stride, counter++) {
+                assert(counter < new_length);
+                for (int i = 0; i < kernel_size; i++) {
+                    for (int input_channel = 0; input_channel < InputChannels;
+                         input_channel++) {
+                        newtensor(batch, channel, counter) +=
+                            tensor(batch, input_channel, pos + i) *
+                            conv_weights(channel, input_channel, i);
+                    }
+                }
+                newtensor(batch, channel, counter) += conv_bias(channel);
+            }
+            assert(counter == new_length);
+        }
     }
-    Tensor3dXf ans(batch_size, OutputChannels,new_length);
-    ans=output_tensor.shuffle(std::array<long long, 3>{1,0,2});
-    return ans;
+    return newtensor;
 }
 
 bool Conv1D::load_from_jit_module(torch::jit::script::Module module,
@@ -503,7 +511,6 @@ Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
     assert(stride > 0);
     Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
     newtensor.setZero();
-
     for (int channel = 0; channel < OutputChannels; channel++) {
         for (int batch = 0; batch < batch_size; batch++) {
             for (int pos = 0; pos < length; pos++) {
@@ -668,6 +675,7 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize, bool bi)
     Tensor2dXf cell_state(HiddenSize, batch_size);
     hidden_state.setZero();
     cell_state.setZero();
+
     auto ExtendColumn = [](Tensor2dXf column_weight,
                            long columns_count) -> Tensor2dXf {
         assert(column_weight.dimension(1) == 1);
@@ -675,7 +683,7 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize, bool bi)
         for (long col = 0; col < columns_count; col++) {
             new_column_weight.chip(col, 1) = column_weight.chip(0, 1);
         }
-        return new_column_weight;
+        return column_weight;
     };
     auto tanh_func = [](float x) { return std::tanh(x); };
     auto sigmoid_func = [](float x) { return 1 / (1 + std::exp(-x)); };

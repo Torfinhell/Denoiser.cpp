@@ -31,3 +31,7 @@ target_include_directories(example-app PRIVATE ${TORCH_INCLUDE_DIRS})
 # Link the Torch libraries
 target_link_libraries(example-app "${TORCH_LIBRARIES}")
 
+# Set compiler optimization flags
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(example-app PRIVATE -Ofast -march=native)
+endif()
