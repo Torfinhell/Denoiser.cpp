@@ -275,25 +275,27 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
     Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
     newtensor.setZero();
 
-    for (int channel = 0; channel < OutputChannels; channel++) {
-        for (int batch = 0; batch < batch_size; batch++) {
-            int counter = 0;
-            for (int pos = 0; pos + kernel_size <= padded_length;
-                 pos += stride, counter++) {
-                assert(counter < new_length);
-                for (int i = 0; i < kernel_size; i++) {
+    for (int pos = 0; pos + kernel_size <= padded_length; pos += stride) {
+        for (int i = 0; i < kernel_size; i++) {
+            for (int batch = 0; batch < batch_size; batch++) {
+                for (int channel = 0; channel < OutputChannels; channel++) {
+                    int counter = pos / stride;
+                    assert(counter < new_length);
                     for (int input_channel = 0; input_channel < InputChannels;
                          input_channel++) {
                         newtensor(batch, channel, counter) +=
                             tensor(batch, input_channel, pos + i) *
                             conv_weights(channel, input_channel, i);
                     }
+                    if (i == 0) {
+                        newtensor(batch, channel, counter) +=
+                            conv_bias(channel);
+                    }
                 }
-                newtensor(batch, channel, counter) += conv_bias(channel);
             }
-            assert(counter == new_length);
         }
     }
+
     return newtensor;
 }
 

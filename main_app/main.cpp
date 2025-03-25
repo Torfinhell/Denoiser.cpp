@@ -8,5 +8,13 @@ int main()
     // TestOneEncoder();
     // TestSimpleEncoderDecoder();
     // TestSimpleEncoderDecoderLSTM();
-    TestBasicDemucsModel();
+    // TestBasicDemucsModel();
+    
+
+
+
+
+
+
+    //write audio
 }

@@ -56,7 +56,7 @@ class TestModel(nn.Module):
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()
         encode = []
-        encode += [
+        encode += [ 
             nn.Conv1d(chin, hidden, self.kernel_size, self.stride),
             nn.ReLU(),
             nn.Conv1d(hidden, hidden * ch_scale, 1), 
@@ -188,7 +188,7 @@ def final_test():
     sr_ms = sr / 1000
     demucs = dns48()
     # x = th.randn(1, int(sr * 4)).to("cpu")
-    x = th.randn(1, int(256)).to("cpu")
+    x = th.randn(1, 256).to("cpu")
     # out = demucs(x[None])[0]
     CreateTests(demucs, x[None], f"{AllTestsPath}/dns48")
 if __name__ == "__main__":
