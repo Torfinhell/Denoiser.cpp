@@ -118,8 +118,14 @@ struct OneDecoder : public Layer {
     {
     }
 };
+struct LstmState {
+    Tensor2dXf hidden_state;
+    Tensor2dXf cell_state;
+    bool is_created = false;
+};
 struct OneLSTM : public Layer {
-    Tensor3dXf forward(Tensor3dXf tensor, int HiddenSize, bool bi = false);
+    Tensor3dXf forward(Tensor3dXf tensor, int HiddenSize, LstmState &lstm_state,
+                       bool bi = false);
     bool load_from_jit_module(torch::jit::script::Module module,
                               std::string weights_index);
     void load_to_file(std::ofstream &outputstream) override;
@@ -173,7 +179,9 @@ struct SimpleEncoderDecoderLSTM : public Layer {
     }
 };
 struct DemucsModel : public Layer {
-    Tensor3dXf forward(Tensor3dXf tensor);
+    Tensor3dXf forward(Tensor3dXf mix, LstmState &lstm_state,
+                       std::vector<std::unique_lock<std::mutex>> &lstm_locks,
+                       int lstm_ind = 0);
     int valid_length(int length);
     bool load_from_jit_module(torch::jit::script::Module module) override;
     void load_to_file(std::ofstream &outputstream) override;
@@ -203,4 +211,8 @@ struct DemucsModel : public Layer {
         std::reverse(decoders.begin(), decoders.end());
         lstm_hidden = chin;
     }
+};
+
+struct DemucsStreamer {
+    Tensor2dXf forward(Tensor2dXf wav);
 };

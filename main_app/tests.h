@@ -111,3 +111,5 @@ void TestSimpleEncoderDecoder();
 void TestSimpleEncoderDecoderLSTM();
 
 void TestBasicDemucsModel();
+
+void TestDemucsStreamer();

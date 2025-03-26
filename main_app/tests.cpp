@@ -405,14 +405,19 @@ void TestBasicDemucsModel()
                 "elements: " +
                 std::to_string(demucs_model.MaxAbsDifference(loaded_model)));
         }
-        if (!TestIfEqual<Tensor3dXf>(prediction, demucs_model.forward(input))) {
+        LstmState lstm_state;
+        std::vector<std::unique_lock<std::mutex>> lstm_locks;
+        if (!TestIfEqual<Tensor3dXf>(
+                prediction,
+                demucs_model.forward(input, lstm_state, lstm_locks))) {
             std::ofstream file1("data1.txt");
             file1 << prediction;
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
-                std::to_string(
-                    MaxAbsDifference(prediction, demucs_model.forward(input))));
+                std::to_string(MaxAbsDifference(
+                    prediction,
+                    demucs_model.forward(input, lstm_state, lstm_locks))));
         }
     }
     catch (const std::exception &e) {
@@ -423,4 +428,54 @@ void TestBasicDemucsModel()
         return;
     }
     std::cout << "DemucsModel Model Test Successfully passed" << std::endl;
+}
+
+void TestDemucsStreamer()
+{
+    try {
+        fs::path base_path = "../tests/test_data/DemucsStreamer";
+        fs::path input_path = base_path / "input.pth";
+        fs::path prediction_path = base_path / "prediction.pth";
+        assert(fs::exists(input_path) && "Input path does not exist");
+        assert(fs::exists(prediction_path) && "Prediction path does not exist");
+        torch::jit::script::Module prior_input, prior_prediction;
+        torch::Tensor input_tensors, prediction_tensors;
+
+        try {
+            prior_input = torch::jit::load(input_path);
+            prior_prediction = torch::jit::load(prediction_path);
+            input_tensors = prior_input.attr("prior").toTensor();
+            prediction_tensors = prior_prediction.attr("prior").toTensor();
+            std::cout << "DemucsStreamer Model loaded successfully"
+                      << std::endl;
+        }
+        catch (const c10::Error &e) {
+            throw std::runtime_error("Error loading the model: " +
+                                     std::string(e.what()));
+        }
+        // std::cout<<input_tensors.dim()<<"
+        // "<<prediction_tensors.dim()<<std::endl;
+        assert(input_tensors.dim() == 2 && "Input tensor must be 2D");
+        assert(prediction_tensors.dim() == 2 && "Prediction tensor must be 2D");
+        Tensor2dXf input = TorchToEigen<Tensor2dXf, 2>(input_tensors);
+        Tensor2dXf prediction = TorchToEigen<Tensor2dXf, 2>(prediction_tensors);
+        DemucsStreamer demucs_model;
+        if (!TestIfEqual<Tensor2dXf>(prediction, demucs_model.forward(input))) {
+            std::ofstream file1("data1.txt");
+            file1 << prediction;
+            throw std::runtime_error(
+                "Error: Comparison of our prediction and known output failed."
+                "The Absolute difference is: " +
+                std::to_string(
+                    MaxAbsDifference(prediction, demucs_model.forward(input))));
+        }
+    }
+    catch (const std::exception &e) {
+        std::cout << "DemucsStreamer Test not passed: \n"
+                  << "Error occurred in file: " << __FILE__
+                  << " at line: " << __LINE__ << "\n"
+                  << e.what() << std::endl;
+        return;
+    }
+    std::cout << "DemucsStreamer Test Successfully passed" << std::endl;
 }
