@@ -1,37 +1,63 @@
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 project(custom_ops)
 
-# Enable exporting compile commands for clangd
+# Enable better optimization diagnostics
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Set the Torch_DIR to the path where TorchConfig.cmake is located
+# Set Torch path
 set(Torch_DIR "/home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/share/cmake/Torch")
 
-# Find the Torch package
+# Find dependencies
 find_package(Torch REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
-# Gather all source files in the main_app directory
-file(GLOB SOURCES "main_app/*.cpp")
+# Enhanced OpenMP setup
+find_package(OpenMP REQUIRED)  # Make OpenMP required
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 
-# Add the executable
+# Add executable
+file(GLOB SOURCES "main_app/*.cpp")
 add_executable(example-app ${SOURCES})
 
-# Set the C++ standard to C++17
-set_property(TARGET example-app PROPERTY CXX_STANDARD 17)
+# Modern target-based configuration
+target_compile_features(example-app PRIVATE cxx_std_17)
 
-# Specify include directories for the target after it has been created
-target_include_directories(example-app PRIVATE ${EIGEN3_INCLUDE_DIR})
-target_include_directories(example-app PRIVATE ${TORCH_INCLUDE_DIRS})
+# Include directories
+target_include_directories(example-app PRIVATE 
+    ${EIGEN3_INCLUDE_DIRS}
+    ${TORCH_INCLUDE_DIRS}
+)
 
-# Add the specific directory for mobile import
-# target_include_directories(example-app PRIVATE "${TORCH_INCLUDE_DIRS}/csrc/jit/mobile")
+# Link libraries
+target_link_libraries(example-app PRIVATE
+    ${TORCH_LIBRARIES}
+    OpenMP::OpenMP_CXX
+    Eigen3::Eigen
+)
 
-# Link the Torch libraries
-target_link_libraries(example-app "${TORCH_LIBRARIES}")
-
-# Set compiler optimization flags
+# Aggressive optimization flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(example-app PRIVATE -Ofast -march=native)
+    target_compile_options(example-app PRIVATE
+        -Ofast
+        -ffast-math
+        -march=native
+        -DNDEBUG
+        -fopenmp-simd  # Enable SIMD parallelization
+        -funroll-loops
+        -flto  # Link-time optimization
+    )
+    
+    target_link_options(example-app PRIVATE
+        -flto
+        -fuse-ld=gold  # Faster linker
+    )
+endif()
+
+# For Clang specifically
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(example-app PRIVATE
+        -Rpass=.*
+        -Rpass-missed=.*
+        -Rpass-analysis=.*
+    )
 endif()

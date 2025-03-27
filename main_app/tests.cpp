@@ -407,17 +407,15 @@ void TestBasicDemucsModel()
         }
         LstmState lstm_state;
         std::vector<std::unique_lock<std::mutex>> lstm_locks;
-        if (!TestIfEqual<Tensor3dXf>(
-                prediction,
-                demucs_model.forward(input, lstm_state, lstm_locks))) {
+        if (!TestIfEqual<Tensor3dXf>(prediction,
+                                     demucs_model.forward(input, lstm_state))) {
             std::ofstream file1("data1.txt");
             file1 << prediction;
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
                 std::to_string(MaxAbsDifference(
-                    prediction,
-                    demucs_model.forward(input, lstm_state, lstm_locks))));
+                    prediction, demucs_model.forward(input, lstm_state))));
         }
     }
     catch (const std::exception &e) {

@@ -179,9 +179,13 @@ struct SimpleEncoderDecoderLSTM : public Layer {
     }
 };
 struct DemucsModel : public Layer {
-    Tensor3dXf forward(Tensor3dXf mix, LstmState &lstm_state,
-                       std::vector<std::unique_lock<std::mutex>> &lstm_locks,
-                       int lstm_ind = 0);
+    Tensor3dXf forward(Tensor3dXf mix, LstmState &lstm_state);
+    std::tuple<Tensor3dXf, std::vector<Tensor3dXf>, int, float>
+    EncoderWorker(Tensor3dXf mix);
+    Tensor3dXf DecoderWorker(Tensor3dXf res2, std::vector<Tensor3dXf> &skips,
+                             int length, float std_constant);
+    Tensor3dXf LSTMWorker(Tensor3dXf x, LstmState &lstm_state);
+
     int valid_length(int length);
     bool load_from_jit_module(torch::jit::script::Module module) override;
     void load_to_file(std::ofstream &outputstream) override;

@@ -11,8 +11,8 @@ int main()
     // TestOneEncoder();
     // TestSimpleEncoderDecoder();
     // TestSimpleEncoderDecoderLSTM();
-    // TestBasicDemucsModel();
-    TestDemucsStreamer();
+    TestBasicDemucsModel();
+    // TestDemucsStreamer();
     // поменять форвард
     //  std::string wav_name="p287_001.wav";
     //  fs::path path_to_wav=fs::path("../data/debug/noisy") / wav_name;
