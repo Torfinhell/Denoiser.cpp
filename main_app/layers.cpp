@@ -1131,7 +1131,7 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
     int frame_length =
         demucs_model.valid_length(1) + total_stride * (num_frames - 1);
     const int total_length = frame_length + resample_lookahead;
-    const int numThreads = 14;
+    const int numThreads = 12;
     const int resample_buffer = 256;
     std::vector<Tensor3dXf> buffer_audio =
         SplitAudio(wav, total_length, total_stride);
@@ -1204,38 +1204,42 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
     int length = tensor.dimension(2);
     int padded_length = length + 2 * padding;
     int new_length = GetSize(padded_length, kernel_size, stride);
+
+    // Padding the tensor
     Eigen::array<std::pair<int, int>, 3> paddings;
     paddings[0] = std::make_pair(0, 0);
     paddings[1] = std::make_pair(0, 0);
     paddings[2] = std::make_pair(padding, padding);
-
     Tensor3dXf padded_tensor = tensor.pad(paddings);
-    tensor = padded_tensor;
 
     assert(kernel_size > 0 && kernel_size <= padded_length);
     assert(stride > 0 && stride <= padded_length);
-
+    if(stride==1 && kernel_size==1){
+        Tensor4dXf newtensor=tensor.contract(conv_weights, Eigen::array<Eigen::IndexPair<int>, 1>{{Eigen::IndexPair<int>(1, 1)}});
+        return newtensor.shuffle(std::array<long long,4>{3,0,2,1 }).chip(0,0);
+    }
     Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
     newtensor.setZero();
-
     for (int channel = 0; channel < OutputChannels; channel++) {
         for (int batch = 0; batch < batch_size; batch++) {
             int counter = 0;
             for (int pos = 0; pos + kernel_size <= padded_length;
                  pos += stride, counter++) {
                 assert(counter < new_length);
+                float result;
                 for (int i = 0; i < kernel_size; i++) {
                     for (int input_channel = 0; input_channel < InputChannels;
                          input_channel++) {
-                        newtensor(batch, channel, counter) +=
+                        result +=
                             tensor(batch, input_channel, pos + i) *
                             conv_weights(channel, input_channel, i);
                     }
                 }
-                newtensor(batch, channel, counter) += conv_bias(channel);
+                newtensor(batch, channel, counter) =result+conv_bias(channel);
             }
             assert(counter == new_length);
         }
     }
-    return newtensor;
+
+return newtensor;
 }

@@ -391,7 +391,6 @@ void TestBasicDemucsModel()
             throw std::runtime_error("Error writing to file!");
         }
         output_file.close();
-
         std::ifstream input_file(base_path / "data.txt");
         if (!input_file) {
             throw std::runtime_error("Error opening data.txt file!");

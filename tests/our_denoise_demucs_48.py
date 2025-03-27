@@ -39,14 +39,22 @@ def upsample2(x, zeros:int=56):
     ICASSP'84. IEEE International Conference on Acoustics, Speech, and Signal Processing.
     Vol. 9. IEEE, 1984.
     """
-    other=np.array(x.shape[:])
+    # Create a list from the shape of x
+    other = list(x.shape)  # Use a list instead of a tensor
     time = x.shape[-1]
     kernel = kernel_upsample2(zeros).to(x)
-    out=F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)
-    other[-1]=time
+    
+    # Perform the convolution
+    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)
+    
+    # Update the shape information
+    other[-1] = time
     out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(*other)
+    
+    # Stack the original and the upsampled output
     y = th.stack([x, out], dim=-1)
-    other[-1]=-1
+    other[-1] = -1
+    
     return y.view(*other)
 
 

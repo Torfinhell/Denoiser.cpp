@@ -54,10 +54,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # For Clang specifically
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(example-app PRIVATE
-        -Rpass=.*
-        -Rpass-missed=.*
-        -Rpass-analysis=.*
-    )
-endif()
+# if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+#     target_compile_options(example-app PRIVATE
+#         -Rpass=.*
+#         -Rpass-missed=.*
+#         -Rpass-analysis=.*
+#     )
+# endif()
