@@ -3,7 +3,6 @@
 #include "tensors.h"
 #include "tests.h"
 #include <mutex>
-#include <thread>
 #include <vector>
 int main()
 {

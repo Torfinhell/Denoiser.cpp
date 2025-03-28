@@ -1,10 +1,8 @@
 #include "tests.h"
 #include "layers.h"
 #include "tensors.h"
-#include <chrono>
 #include <exception>
 #include <filesystem>
-#include <iomanip>
 #include <ios>
 #include <iostream>
 #include <stdexcept>
@@ -15,7 +13,7 @@ std::array<long, 2> indices_dim_2 = {0, 0};
 std::array<long, 3> indices_dim_3 = {0, 0, 0};
 std::array<long, 4> indices_dim_4 = {0, 0, 0, 0};
 namespace fs = std::filesystem;
-using namespace Eigen;
+using namespace Tensors;
 void print_model_layers(const torch::jit::script::Module &module)
 {
     for (const auto &child : module.named_children()) {

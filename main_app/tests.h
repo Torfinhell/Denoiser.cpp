@@ -1,20 +1,11 @@
-#include "denoiser.h"
-#include "layers.h"
-#include "tensors.h"
 
 #include <Eigen/Dense>
 #include <array>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <limits>
-#include <optional>
-#include <stdexcept>
 #include <torch/torch.h>
 #include <unsupported/Eigen/CXX11/Tensor>
 
-namespace fs = std::filesystem;
-using namespace Eigen;
+
 
 void print_model_layers(const torch::jit::script::Module &module);
 

@@ -1,9 +1,9 @@
 #pragma once
-#include "filesystem"
 #include "tensors.h"
-#include <ATen/core/TensorBody.h>
+// #include <ATen/core/TensorBody.h>
 #include <fstream>
 #include <torch/script.h>
+
 #include <vector>
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg;
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_sec_transposed;
@@ -13,7 +13,7 @@ extern std::array<long, 1> indices_dim_1;
 extern std::array<long, 2> indices_dim_2;
 extern std::array<long, 3> indices_dim_3;
 extern std::array<long, 4> indices_dim_4;
-using namespace Eigen;
+using namespace Tensors;
 struct Layer {
   public:
     virtual bool load_from_jit_module(torch::jit::script::Module module)

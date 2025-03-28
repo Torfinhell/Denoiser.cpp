@@ -2,7 +2,7 @@
 #include <caffe2/serialize/read_adapter_interface.h>
 #include <filesystem>
 namespace fs = std::filesystem;
-using namespace Eigen;
+using namespace Tensors;
 Tensor3dXf ReadAudioFromFile(fs::path file_name);
 std::vector<Tensor3dXf> SplitAudio(Tensor3dXf audio, int total_length,
                                    int total_stride);

@@ -39,12 +39,15 @@ def upsample2(x, zeros:int=56):
     ICASSP'84. IEEE International Conference on Acoustics, Speech, and Signal Processing.
     Vol. 9. IEEE, 1984.
     """
-    other, time = x.shape[:-1],x.shape[-1]
+    other=np.array(x.shape[:])
+    time = x.shape[-1]
     kernel = kernel_upsample2(zeros).to(x)
     out=F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)
-    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(other[0],other[1], time)
+    other[-1]=time
+    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(*other)
     y = th.stack([x, out], dim=-1)
-    return y.view(other[0],other[1], -1)
+    other[-1]=-1
+    return y.view(*other)
 
 
 def kernel_downsample2(zeros:int=56):
@@ -70,10 +73,14 @@ def downsample2(x, zeros:int=56):
         x = F.pad(x, (0, 1))
     xeven = x[..., ::2]
     xodd = x[..., 1::2]
-    other, time = xodd.shape[:-1],xodd.shape[-1]
+    time = xodd.shape[-1]
+    other=np.array(xodd.shape)
+    other[-1]=time
     kernel = kernel_downsample2(zeros).to(x)
     out = xeven + F.conv1d(xodd.view(-1, 1, time), kernel, padding=zeros)[..., :-1].view(
-        other[0],other[1], time)
+        *other)
+    other[-1]=-1
+    return out.view(*other).mul(0.5)
     return out.view(other[0],other[1], -1).mul(0.5)
 from typing import Optional, Tuple  # <-- Added import for type annotations
 class BLSTM(nn.Module):

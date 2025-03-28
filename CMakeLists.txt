@@ -1,38 +1,50 @@
-cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 project(custom_ops)
 
 # Enable better optimization diagnostics
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Set Torch path
-set(Torch_DIR "/home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/share/cmake/Torch")
+set(Torch_DIR "/home/torfinhell/Denoiser.cpp/libtorch/share/cmake/Torch/")
+
 
 # Find dependencies
 find_package(Torch REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+
+
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(Threads REQUIRED)
 
 # Add executable
 file(GLOB SOURCES "main_app/*.cpp")
-add_executable(example-app ${SOURCES})
+add_executable(example_app ${SOURCES})
 
 # Modern target-based configuration
-target_compile_features(example-app PRIVATE cxx_std_17)
+target_compile_features(example_app PRIVATE cxx_std_17)
+
+# Add definitions for Eigen threading
+target_compile_definitions(example_app PRIVATE
+    EIGEN_USE_THREADS
+    EIGEN_HAS_CXX11_ATOMIC
+)
 
 # Include directories
-target_include_directories(example-app PRIVATE 
-    ${EIGEN3_INCLUDE_DIRS}
-    ${TORCH_INCLUDE_DIRS}
+target_include_directories(example_app PRIVATE 
+    ${EIGEN3_INCLUDE_DIRS}  
+    ${TORCH_INCLUDE_DIRS}  
 )
 
 # Link libraries
-target_link_libraries(example-app PRIVATE
+target_link_libraries(example_app PRIVATE
     ${TORCH_LIBRARIES}
     Eigen3::Eigen
+    Threads::Threads
 )
 
 # Aggressive optimization flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(example-app PRIVATE
+    target_compile_options(example_app PRIVATE
         -Ofast
         -ffast-math
         -march=native
@@ -41,7 +53,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -flto  # Link-time optimization
     )
     
-    target_link_options(example-app PRIVATE
+    target_link_options(example_app PRIVATE
         -flto
         -fuse-ld=gold  # Faster linker
     )
