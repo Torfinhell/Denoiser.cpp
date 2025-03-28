@@ -39,23 +39,12 @@ def upsample2(x, zeros:int=56):
     ICASSP'84. IEEE International Conference on Acoustics, Speech, and Signal Processing.
     Vol. 9. IEEE, 1984.
     """
-    # Create a list from the shape of x
-    other = list(x.shape)  # Use a list instead of a tensor
-    time = x.shape[-1]
+    other, time = x.shape[:-1],x.shape[-1]
     kernel = kernel_upsample2(zeros).to(x)
-    
-    # Perform the convolution
-    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)
-    
-    # Update the shape information
-    other[-1] = time
-    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(*other)
-    
-    # Stack the original and the upsampled output
+    out=F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)
+    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(other[0],other[1], time)
     y = th.stack([x, out], dim=-1)
-    other[-1] = -1
-    
-    return y.view(*other)
+    return y.view(other[0],other[1], -1)
 
 
 def kernel_downsample2(zeros:int=56):
@@ -81,14 +70,11 @@ def downsample2(x, zeros:int=56):
         x = F.pad(x, (0, 1))
     xeven = x[..., ::2]
     xodd = x[..., 1::2]
-    time = xodd.shape[-1]
-    other=np.array(xodd.shape)
-    other[-1]=time
+    other, time = xodd.shape[:-1],xodd.shape[-1]
     kernel = kernel_downsample2(zeros).to(x)
     out = xeven + F.conv1d(xodd.view(-1, 1, time), kernel, padding=zeros)[..., :-1].view(
-        *other)
-    other[-1]=-1
-    return out.view(*other).mul(0.5)
+        other[0],other[1], time)
+    return out.view(other[0],other[1], -1).mul(0.5)
 from typing import Optional, Tuple  # <-- Added import for type annotations
 class BLSTM(nn.Module):
     ##################

@@ -461,39 +461,86 @@ Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
 {
     int batch_size = tensor.dimension(0);
     int length = tensor.dimension(2);
-    int new_length = GetTransposedSize(length, kernel_size, stride);
-    // std::cout<<conv_tr_weights.dimensions()<<" "<<InputChannels<<"
-    // "<<OutputChannels<<" "<<kernel_size<<std::endl;
+    long new_length = GetTransposedSize(length, kernel_size, stride);
     assert(conv_tr_weights.dimension(0) == InputChannels);
     assert(conv_tr_weights.dimension(1) == OutputChannels);
     assert(conv_tr_weights.dimension(2) == kernel_size);
     assert(tensor.dimension(1) == InputChannels);
     assert(kernel_size > 0 && kernel_size <= new_length);
     assert(stride > 0);
-    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
-    newtensor.setZero();
+    //we assume that kernel_size==stride*2
+    // if (kernel_size == stride * 2) {
+    auto func_get_ans = [batch_size, OutputChannels, length, stride](
+                            const Tensor3dXf &input,
+                            const Tensor3dXf &stride_kernel,
+                            int padding_left = 0, int padding_right = 0) {
+        Tensor4dXf newtensor = input.contract(
+            stride_kernel, Eigen::array<Eigen::IndexPair<int>, 1>{
+                                {Eigen::IndexPair<int>(1, 0)}});
+        int new_length_for_stride = stride * length;
+        Tensor4dXf other_tensor =
+            newtensor.shuffle(std::array<long long, 4>{0, 2, 1, 3});
+        Tensor3dXf res = other_tensor.reshape(std::array<long, 3>{
+            batch_size, OutputChannels, new_length_for_stride});
+        Eigen::array<std::pair<int, int>, 3> paddings;
+        paddings[0] = std::make_pair(0, 0);
+        paddings[1] = std::make_pair(0, 0);
+        paddings[2] = std::make_pair(padding_left, padding_right);
+        return res.pad(paddings);
+    };
+    std::array<long, 3> offset = {0, 0, 0};
+    std::array<long, 3> offset1 = {0, 0, stride};
+    std::array<long, 3> extent = {InputChannels, OutputChannels, stride};
+    Tensor3dXf output_tensor =
+        func_get_ans(tensor, conv_tr_weights.slice(offset, extent), 0,
+                        stride) +
+        func_get_ans(tensor, conv_tr_weights.slice(offset1, extent), stride,
+                        0);
+    output_tensor +=
+        conv_tr_bias.reshape(std::array<long, 3>{1, OutputChannels, 1})
+            .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
+    return output_tensor;
+    // }
+    // else if (kernel_size == stride) {
+    //     Tensor4dXf newtensor = tensor.contract(
+    //         conv_tr_weights, Eigen::array<Eigen::IndexPair<int>, 1>{
+    //                              {Eigen::IndexPair<int>(1, 0)}});
+    //     Tensor4dXf other_tensor =
+    //         newtensor.shuffle(std::array<long long, 4>{0, 2, 1, 3});
+    //     Tensor3dXf output_tensor = other_tensor.reshape(
+    //         std::array<long, 3>{batch_size, OutputChannels, new_length});
+    //     output_tensor +=
+    //         conv_tr_bias.reshape(std::array<long, 3>{1, OutputChannels, 1})
+    //             .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
+    //     return output_tensor;
+    // }
+    // else {
+    //     Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    //     newtensor.setZero();
 
-    for (int channel = 0; channel < OutputChannels; channel++) {
-        for (int batch = 0; batch < batch_size; batch++) {
-            for (int pos = 0; pos < length; pos++) {
-                for (int i = 0; i < kernel_size; i++) {
-                    int output_pos = pos * stride + i;
-                    if (output_pos < new_length) {
-                        for (int input_channel = 0;
-                             input_channel < InputChannels; input_channel++) {
-                            newtensor(batch, channel, output_pos) +=
-                                tensor(batch, input_channel, pos) *
-                                conv_tr_weights(input_channel, channel, i);
-                        }
-                    }
-                }
-            }
-            for (int pos = 0; pos < new_length; pos++) {
-                newtensor(batch, channel, pos) += conv_tr_bias(channel);
-            }
-        }
-    }
-    return newtensor;
+    //     for (int channel = 0; channel < OutputChannels; channel++) {
+    //         for (int batch = 0; batch < batch_size; batch++) {
+    //             for (int pos = 0; pos < length; pos++) {
+    //                 for (int i = 0; i < kernel_size; i++) {
+    //                     int output_pos = pos * stride + i;
+    //                     if (output_pos < new_length) {
+    //                         for (int input_channel = 0;
+    //                              input_channel < InputChannels;
+    //                              input_channel++) {
+    //                             newtensor(batch, channel, output_pos) +=
+    //                                 tensor(batch, input_channel, pos) *
+    //                                 conv_tr_weights(input_channel, channel, i);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             for (int pos = 0; pos < new_length; pos++) {
+    //                 newtensor(batch, channel, pos) += conv_tr_bias(channel);
+    //             }
+    //         }
+    //     }
+    //     return newtensor;
+    // }
 }
 
 bool ConvTranspose1d::load_from_jit_module(torch::jit::script::Module module,
@@ -1204,42 +1251,45 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
     int length = tensor.dimension(2);
     int padded_length = length + 2 * padding;
     int new_length = GetSize(padded_length, kernel_size, stride);
-
-    // Padding the tensor
     Eigen::array<std::pair<int, int>, 3> paddings;
     paddings[0] = std::make_pair(0, 0);
     paddings[1] = std::make_pair(0, 0);
     paddings[2] = std::make_pair(padding, padding);
-    Tensor3dXf padded_tensor = tensor.pad(paddings);
 
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;
+    if (stride == 1 && kernel_size == 1) {
+        Tensor4dXf newtensor = tensor.contract(
+            conv_weights, Eigen::array<Eigen::IndexPair<int>, 1>{
+                              {Eigen::IndexPair<int>(1, 1)}});
+        Tensor3dXf ans =
+            newtensor.shuffle(std::array<long long, 4>{3, 0, 2, 1}).chip(0, 0);
+        Tensor3dXf bias_tensor =
+            conv_bias.reshape(std::array<long long, 3>{1, OutputChannels, 1})
+                .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
+        return ans + bias_tensor;
+    }
     assert(kernel_size > 0 && kernel_size <= padded_length);
     assert(stride > 0 && stride <= padded_length);
-    if(stride==1 && kernel_size==1){
-        Tensor4dXf newtensor=tensor.contract(conv_weights, Eigen::array<Eigen::IndexPair<int>, 1>{{Eigen::IndexPair<int>(1, 1)}});
-        return newtensor.shuffle(std::array<long long,4>{3,0,2,1 }).chip(0,0);
-    }
-    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
-    newtensor.setZero();
-    for (int channel = 0; channel < OutputChannels; channel++) {
-        for (int batch = 0; batch < batch_size; batch++) {
-            int counter = 0;
-            for (int pos = 0; pos + kernel_size <= padded_length;
-                 pos += stride, counter++) {
-                assert(counter < new_length);
-                float result;
-                for (int i = 0; i < kernel_size; i++) {
-                    for (int input_channel = 0; input_channel < InputChannels;
-                         input_channel++) {
-                        result +=
-                            tensor(batch, input_channel, pos + i) *
-                            conv_weights(channel, input_channel, i);
-                    }
-                }
-                newtensor(batch, channel, counter) =result+conv_bias(channel);
-            }
-            assert(counter == new_length);
-        }
-    }
-
-return newtensor;
+    Tensor4dXf big_tensor(1, tensor.dimension(0), tensor.dimension(1),
+                          tensor.dimension(2));
+    big_tensor.chip(0, 0) = tensor;
+    Tensor4dXf big_tensor_shuffled =
+        big_tensor.shuffle(std::array<long long, 4>{1, 2, 3, 0});
+    big_tensor = big_tensor_shuffled;
+    Tensor5dXf extracted_images = big_tensor.extract_image_patches(
+        InputChannels, kernel_size, InputChannels, stride, 1, 1,
+        PaddingType::PADDING_VALID);
+    Tensor5dXf extracted_images_shuffle =
+        extracted_images.shuffle(std::array<long long, 5>{4, 0, 1, 2, 3});
+    Tensor4dXf get_patches = extracted_images_shuffle.chip(0, 0);
+    Tensor3dXf output_tensor = conv_weights.contract(
+        get_patches,
+        Eigen::array<Eigen::IndexPair<int>, 2>{
+            {Eigen::IndexPair<int>(1, 1), Eigen::IndexPair<int>(2, 2)}});
+    Tensor3dXf bias_tensor =
+        conv_bias.reshape(std::array<long long, 3>{OutputChannels, 1, 1})
+            .broadcast(std::array<long long, 3>{1, batch_size, new_length});
+    output_tensor += bias_tensor;
+    return output_tensor.shuffle(std::array<long long, 3>{1, 0, 2});
 }

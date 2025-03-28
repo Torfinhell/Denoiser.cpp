@@ -28,7 +28,7 @@ def CreateTests(model, input:TensorContainer, path:TensorContainer, predictions=
     #                 print("Convolutional weights:", sub_layer.weight.data)
     # print(predictions)
     save_data_to_file(createTensorContainer(predictions), f"{path}/prediction.pth")
-    # save_data_to_file(model, f"{path}/model.pth")
+    save_data_to_file(model, f"{path}/model.pth")
     save_data_to_file(createTensorContainer(input), f"{path}/input.pth")
 class SimpleModel(nn.Module):
     def __init__(self):
@@ -209,8 +209,8 @@ if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
     # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
     # CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")
-    # final_test()
+    final_test()
     #read audio
-    sr=16_000
-    x = th.randn(1, int(4*sr))
-    CreateTests(DemucsStreamerTest,x,f"{AllTestsPath}/DemucsStreamer")
+    # sr=16_000
+    # x = th.randn(1, int(4*sr))
+    # CreateTests(DemucsStreamerTest,x,f"{AllTestsPath}/DemucsStreamer")
