@@ -192,7 +192,7 @@ def final_test():
     # out = demucs(x[None])[0]
     CreateTests(demucs, x[None], f"{AllTestsPath}/dns48")
 if __name__ == "__main__":
-    AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
+    AllTestsPath="/home/torfinhell/Denoiser.cpp/main_app/tests/test_data"
     # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
     # CreateTests(TestModel(), torch.randn(2, 1, 12),f"{AllTestsPath}/DemucsModel")
     final_test()

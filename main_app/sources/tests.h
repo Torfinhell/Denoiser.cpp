@@ -5,8 +5,6 @@
 #include <torch/torch.h>
 #include <unsupported/Eigen/CXX11/Tensor>
 
-
-
 void print_model_layers(const torch::jit::script::Module &module);
 
 template <typename EigenTensor>

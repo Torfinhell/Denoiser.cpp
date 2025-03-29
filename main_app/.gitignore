@@ -26,45 +26,6 @@
 *.a
 *.lib
 
-# Executables
-*.exe
-*.out
-*.app
-
-.DS_Store
-.idea/
-Build/
-build/
-Builds/
-builds/
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
 *.txt
 # Executables
 *.exe
@@ -86,3 +47,4 @@ tests/test_data/
 .clang-format
 build/data.txt
 libtorch*
+.venv

@@ -62,8 +62,8 @@ def process_models(input_folder, output_folder):
                 print(f"Error processing {filename}: {e}")
 
 # Define input and output folders
-input_folder = '/home/torfinhell/Denoiser.cpp/models'
-output_folder = '/home/torfinhell/Denoiser.cpp/models/info_model'
+input_folder = '/home/torfinhell/Denoiser.cpp/main_app/models'
+output_folder = '/home/torfinhell/Denoiser.cpp/models/main_app/info_model'
 
 # Process the models
 process_models(input_folder, output_folder)

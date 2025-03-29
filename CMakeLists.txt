@@ -1,60 +1,88 @@
-cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
-project(custom_ops)
+cmake_minimum_required(VERSION 3.24)
 
-# Enable better optimization diagnostics
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Set Torch path
-set(Torch_DIR "/home/torfinhell/Denoiser.cpp/libtorch/share/cmake/Torch/")
+# Change to your project name
+project(SimpleJucePluginTemplate VERSION 0.0.1)
 
 
-# Find dependencies
-find_package(Torch REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_XCODE_GENERATE_SCHEME OFF)
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# We're going to use CPM as our package manager to bring in JUCE
+# Check to see if we have CPM installed already.  Bring it in if we don't.
+set(CPM_DOWNLOAD_VERSION 0.34.0)
+set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
 
-find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-find_package(Threads REQUIRED)
+if (NOT EXISTS ${CPM_DOWNLOAD_LOCATION})
+    message(STATUS "Downloading CPM.cmake to ${CPM_DOWNLOAD_LOCATION}")
+    file(DOWNLOAD https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake ${CPM_DOWNLOAD_LOCATION})
+endif ()
 
-# Add executable
-file(GLOB SOURCES "main_app/*.cpp")
-add_executable(example_app ${SOURCES})
+include(${CPM_DOWNLOAD_LOCATION})
 
-# Modern target-based configuration
-target_compile_features(example_app PRIVATE cxx_std_17)
-
-# Add definitions for Eigen threading
-target_compile_definitions(example_app PRIVATE
-    EIGEN_USE_THREADS
-    EIGEN_HAS_CXX11_ATOMIC
+# Bring in JUCE locally
+CPMAddPackage(
+    NAME juce
+    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+    GIT_TAG origin/master
 )
 
-# Include directories
-target_include_directories(example_app PRIVATE 
-    ${EIGEN3_INCLUDE_DIRS}  
-    ${TORCH_INCLUDE_DIRS}  
+# Make sure you include any new source files here
+set(SourceFiles
+        juce_plugin/PluginEditor.cpp
+        juce_plugin/PluginEditor.h
+        juce_plugin/PluginProcessor.cpp
+        juce_plugin/PluginProcessor.h
 )
 
-# Link libraries
-target_link_libraries(example_app PRIVATE
-    ${TORCH_LIBRARIES}
-    Eigen3::Eigen
-    Threads::Threads
+
+juce_add_plugin(${PROJECT_NAME}
+        COMPANY_NAME theaudioprogrammer
+        IS_SYNTH FALSE
+        NEEDS_MIDI_INPUT FALSE
+        NEEDS_MIDI_OUTPUT FALSE
+        IS_MIDI_EFFECT FALSE
+        EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+        JUCE_VST3_CAN_REPLACE_VST2 FALSE
+        COPY_PLUGIN_AFTER_BUILD TRUE
+        PLUGIN_MANUFACTURER_CODE Tap1
+        PLUGIN_CODE Reg0
+        FORMATS VST3 AU Standalone
+        PRODUCT_NAME "TapPluginTemplate"        
 )
 
-# Aggressive optimization flags
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(example_app PRIVATE
-        -Ofast
-        -ffast-math
-        -march=native
-        -DNDEBUG
-        -funroll-loops
-        -flto  # Link-time optimization
-    )
-    
-    target_link_options(example_app PRIVATE
-        -flto
-        -fuse-ld=gold  # Faster linker
-    )
-endif()
+# How we want our SourceFiles to appear in our IDE
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SourceFiles})
+
+# Make the SourceFiles buildable
+target_sources(${PROJECT_NAME} PRIVATE ${SourceFiles})
+
+# These are some toggleable options from the JUCE CMake API
+target_compile_definitions(${PROJECT_NAME}
+    PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+)
+
+# JUCE libraries to bring into our project
+target_link_libraries(${PROJECT_NAME}
+        PUBLIC
+        juce::juce_analytics
+        juce::juce_audio_basics
+        juce::juce_audio_devices
+        juce::juce_core
+        juce::juce_data_structures
+        juce::juce_graphics
+        juce::juce_gui_basics
+        juce::juce_gui_extra
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+)
+
+
+add_subdirectory(main_app)
+target_link_libraries(${PROJECT_NAME} PRIVATE main_app)

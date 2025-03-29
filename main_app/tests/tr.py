@@ -206,7 +206,7 @@ def DemucsStreamerTest(x):
     out_rt = th.cat(out_rt, 1)
     return out_rt
 if __name__ == "__main__":
-    AllTestsPath="/home/torfinhell/Denoiser.cpp/tests/test_data"
+    AllTestsPath="/home/torfinhell/Denoiser.cpp/main_app/tests/test_data"
     # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
     # CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")
     # final_test()

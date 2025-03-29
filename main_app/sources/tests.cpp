@@ -448,8 +448,6 @@ void TestDemucsStreamer()
             throw std::runtime_error("Error loading the model: " +
                                      std::string(e.what()));
         }
-        // std::cout<<input_tensors.dim()<<"
-        // "<<prediction_tensors.dim()<<std::endl;
         assert(input_tensors.dim() == 2 && "Input tensor must be 2D");
         assert(prediction_tensors.dim() == 2 && "Prediction tensor must be 2D");
         Tensor2dXf input = TorchToEigen<Tensor2dXf, 2>(input_tensors);
