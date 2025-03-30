@@ -200,6 +200,7 @@ def DemucsStreamerTest(x):
         while x.shape[1] > 0:
             # print(x[:, :frame_size])
             out_rt.append(streamer.feed(x[:, :frame_size]))
+            return out_rt[0]
             x = x[:, frame_size:]
             frame_size = streamer.demucs.total_stride
     # out_rt.append(streamer.flush())

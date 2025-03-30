@@ -178,12 +178,13 @@ struct SimpleEncoderDecoderLSTM : public Layer {
     {
     }
 };
+struct DemucsStreamer;
 struct DemucsModel : public Layer {
-    Tensor3dXf forward(Tensor3dXf mix, LstmState &lstm_state);
-    std::tuple<Tensor3dXf, std::vector<Tensor3dXf>, int, float>
-    EncoderWorker(Tensor3dXf mix);
-    Tensor3dXf DecoderWorker(Tensor3dXf res2, std::vector<Tensor3dXf> &skips,
-                             int length, float std_constant);
+    Tensor3dXf forward(Tensor3dXf mix, LstmState &lstm_state,
+                       DemucsStreamer *streamer = nullptr);
+    Tensor3dXf EncoderWorker(Tensor3dXf mix,
+                             DemucsStreamer *streamer = nullptr);
+    Tensor3dXf DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer);
     Tensor3dXf LSTMWorker(Tensor3dXf x, LstmState &lstm_state);
 
     int valid_length(int length);
@@ -197,13 +198,20 @@ struct DemucsModel : public Layer {
     std::vector<OneEncoder> encoders;
     OneLSTM lstm1, lstm2;
     int hidden, ch_scale, kernel_size, stride, chout, depth, resample;
-    int lstm_hidden;
+    int lstm_hidden, chin;
+    float floor;
+    std::vector<Tensor3dXf> skips;
+    int length;
+    float std_constant;
     DemucsModel(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                 int stride = 4, int chout = 1, int depth = 5, int chin = 1,
-                int max_hidden = 10000, int growth = 2, int resample = 4)
+                int max_hidden = 10000, int growth = 2, int resample = 4,
+                float floor = 1e-3)
         : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
-          stride(stride), chout(chout), depth(depth), resample(resample)
+          stride(stride), chout(chout), depth(depth), resample(resample),
+          chin(chin), floor(floor)
     {
+        int chin_first = chin;
         for (int i = 0; i < depth; i++) {
             encoders.emplace_back(hidden, ch_scale, kernel_size, stride, chout,
                                   chin);
@@ -214,9 +222,44 @@ struct DemucsModel : public Layer {
         }
         std::reverse(decoders.begin(), decoders.end());
         lstm_hidden = chin;
+        chin = chin_first;
     }
 };
 
 struct DemucsStreamer {
     Tensor2dXf forward(Tensor2dXf wav);
+    Tensor3dXf feed(Tensor3dXf wav, LstmState &lstm_state);
+    DemucsModel demucs_model;
+    Tensor3dXf pending;
+    int resample_buffer;
+    int resample;
+    int total_stride;
+    int frame_length;
+    int resample_lookahead;
+    int total_length;
+    int num_frames;
+    int stride;
+    int frames;
+    float variance;
+    Tensor3dXf resample_in;
+    Tensor3dXf resample_out;
+    DemucsStreamer(int resample_buffer = 256, int resample = 4,
+                   int resample_lookahead = 64, int num_frames = 1)
+        : resample_buffer(resample_buffer), resample(resample),
+          resample_lookahead(resample_lookahead), num_frames(num_frames),
+          frames(0), variance(0)
+    {
+        frame_length = demucs_model.valid_length(1);
+        total_stride =
+            (pow(demucs_model.stride, demucs_model.depth)) / resample;
+        total_length = frame_length + resample_lookahead;
+        pending.resize(1, demucs_model.chin, 0);
+        resample_in.resize(1,demucs_model.chin, resample_buffer);
+        resample_out.resize(1,demucs_model.chin, resample_buffer);
+        pending.setZero();
+        resample_in.setZero();
+        resample_out.setZero();
+        stride = total_stride * num_frames;
+    }
+    void reset_frames() { frames = 0; }
 };

@@ -379,11 +379,11 @@ class DemucsStreamer:
             padded_frame = th.cat([self.resample_in, frame], dim=-1)
             self.resample_in[:] = frame[:, stride - resample_buffer:stride]
             frame = padded_frame
-
             if resample == 4:
                 frame = upsample2(upsample2(frame))
             elif resample == 2:
                 frame = upsample2(frame)
+            return frame
             # frame = frame[:, resample * resample_buffer:]  # remove pre sampling buffer
             # frame = frame[:, :resample * self.frame_length]  # remove extra samples after window
 

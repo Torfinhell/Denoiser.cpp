@@ -468,10 +468,10 @@ Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
     assert(kernel_size > 0 && kernel_size <= new_length);
     assert(stride > 0);
     // we assume that kernel_size==stride*2
-    auto func_get_ans = [batch_size, OutputChannels, length,
-                         stride](const Tensor3dXf &input,
-                                 const Tensor3dXf &stride_kernel,
-                                 int padding_left = 0, int padding_right = 0)->Tensor3dXf {
+    auto func_get_ans =
+        [batch_size, OutputChannels, length,
+         stride](const Tensor3dXf &input, const Tensor3dXf &stride_kernel,
+                 int padding_left = 0, int padding_right = 0) -> Tensor3dXf {
         Eigen::array<std::pair<int, int>, 3> paddings;
         paddings[0] = std::make_pair(0, 0);
         paddings[1] = std::make_pair(0, 0);
@@ -776,7 +776,7 @@ bool OneLSTM::IsEqual(const OneLSTM &other, float tolerance)
 }
 
 template <typename Tensor, int NumDim>
-void GetMean(Tensor &tensor, Tensor &result, int dim,
+void GetMean(const Tensor &tensor, Tensor &result, int dim,
              std::array<long, NumDim> arr, int pos = 0,
              bool is_first_call = true)
 {
@@ -883,20 +883,16 @@ Tensor3dXf KernelUpsample2(int zeros = 56)
     return kernel_reshaped;
 }
 template <typename Tensor, typename TensorMore, int NumDim>
-Tensor UpSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
+Tensor UpSample(Tensor tensor, int zeros = 56)
 {
-    long first_shape_size = 1;
     int last_dimension = tensor.dimension(NumDim - 1);
-    for (long i = 0; i < NumDim - 1; i++) {
-        first_shape_size *= tensor.dimension(i);
-    }
     Tensor kernel = KernelUpsample2(zeros);
     Conv1D conv;
     conv.conv_weights = kernel;
     conv.conv_bias.resize(std::array<long, 1>{1});
     conv.conv_bias.setZero();
     Tensor3dXf res = conv.forward(tensor.reshape(std::array<long, 3>{
-                                      first_shape_size, 1, last_dimension}),
+                                      tensor.size()/last_dimension, 1, last_dimension}),
                                   1, 1, kernel.dimension(2), 1, zeros);
     std::array<long, NumDim> extent;
     for (long i = 0; i < NumDim; i++) {
@@ -965,59 +961,76 @@ Tensor DownSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
     return (tensor_even + out).unaryExpr([](float x) { return x / 2; });
 }
 
-Tensor3dXf DemucsModel::forward(Tensor3dXf mix, LstmState &lstm_state)
+Tensor3dXf DemucsModel::forward(Tensor3dXf mix, LstmState &lstm_state,
+                                DemucsStreamer *streamer)
 {
-    auto start = std::chrono::high_resolution_clock::now();
-    auto [res1, skips, length, std_constant] = EncoderWorker(mix);
-    auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "Time taken for EncoderWorker: "
-              << std::chrono::duration<double>(end - start).count()
-              << " seconds" << std::endl;
-    start = std::chrono::high_resolution_clock::now();
-    auto res2 = LSTMWorker(res1, lstm_state);
-    end = std::chrono::high_resolution_clock::now();
-    std::cout << "Time taken for LSTMWorker: "
-              << std::chrono::duration<double>(end - start).count()
-              << " seconds" << std::endl;
-    start = std::chrono::high_resolution_clock::now();
-    auto res3 = DecoderWorker(res2, skips, length, std_constant);
-    end = std::chrono::high_resolution_clock::now();
-    std::cout << "Time taken for DecoderWorker: "
-              << std::chrono::duration<double>(end - start).count()
-              << " seconds" << std::endl;
-    return res3;
+    // auto start = std::chrono::high_resolution_clock::now();
+    auto res1 = EncoderWorker(mix, streamer);
+    // auto end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time taken for EncoderWorker: "
+    //           << std::chrono::duration<double>(end - start).count()
+    //           << " seconds" << std::endl;
+    // start = std::chrono::high_resolution_clock::now();
+    // auto res2 = LSTMWorker(res1, lstm_state);
+    // // end = std::chrono::high_resolution_clock::now();
+    // // std::cout << "Time taken for LSTMWorker: "
+    // //           << std::chrono::duration<double>(end - start).count()
+    // //           << " seconds" << std::endl;
+    // // start = std::chrono::high_resolution_clock::now();
+    // auto res3 = DecoderWorker(res2, streamer);
+    // end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time taken for DecoderWorker: "
+    //           << std::chrono::duration<double>(end - start).count()
+    //           << " seconds" << std::endl;
+    return res1;
 }
-std::tuple<Tensor3dXf, std::vector<Tensor3dXf>, int, float>
-DemucsModel::EncoderWorker(Tensor3dXf mix)
+Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
 {
     Tensor3dXf mono, std;
     GetMean<Tensor3dXf, 3>(mix, mono, 1, indices_dim_3);
-    GetStd<Tensor3dXf, 3>(mono, std, 2, indices_dim_3);
-    float std_constant = std(std::array<long, 3>{0, 0, 0});
-    mix = mix.unaryExpr([std_constant](float x) {
-        return x / (static_cast<float>(std_constant + 1e-3));
-    });
-    int length = mix.dimension(mix.NumDimensions - 1);
-    Tensor3dXf x = mix;
-    Eigen::array<std::pair<int, int>, 3> paddings = {};
-    paddings[2] = std::make_pair(0, valid_length(length) - length);
-    Tensor3dXf padded_x = x.pad(paddings);
-    x = padded_x;
-    std::vector<Tensor3dXf> skips;
-    x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
-    x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
-    for (int i = 0; i < depth; i++) {
-        x = encoders[i].forward(x);
-        skips.push_back(x);
+    if (streamer) {
+        GetMean<Tensor3dXf, 3>(mono.unaryExpr([](float x){return x*x;}), std, 2, indices_dim_3);
+        std_constant = std(std::array<long, 3>{0, 0, 0});
+        streamer->variance =
+            std_constant / static_cast<float>(streamer->frames) +
+            (1 - 1 / static_cast<float>(streamer->frames)) * streamer->variance;
+        mix = mix.unaryExpr([streamer, this](float x) {
+            return x / (sqrt(streamer->variance) + floor);
+        });
+        std::array<long, 3> offset={0,0,(streamer->stride)-(streamer->resample_buffer)}, extent={1,1,streamer->resample_buffer};
+        return streamer->resample_in;
+        Tensor3dXf padded_mix=ConcatList(std::vector<Tensor3dXf>{streamer->resample_in, mix}, 2);
+        streamer->resample_in=mix.slice(offset,extent);
+        Tensor3dXf x = padded_mix;
+        x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x);
+        x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x);
+        return x;
+
     }
-    return {x, skips, length, std_constant};
+    else {
+        GetStd<Tensor3dXf, 3>(mono, std, 2, indices_dim_3);
+        std_constant = std(std::array<long, 3>{0, 0, 0});
+        mix = mix.unaryExpr(
+            [this](float x) { return x / (sqrt(std_constant + floor)); });
+        length = mix.dimension(mix.NumDimensions - 1);
+        Tensor3dXf x = mix;
+        Eigen::array<std::pair<int, int>, 3> paddings = {};
+        paddings[2] = std::make_pair(0, valid_length(length) - length);
+        Tensor3dXf padded_x = x.pad(paddings);
+        x = padded_x;
+        x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x);
+        x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x);
+        skips.clear();
+        for (int i = 0; i < depth; i++) {
+            x = encoders[i].forward(x);
+            skips.push_back(x);
+        }
+        return x;
+    }
 }
-Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf res2,
-                                      std::vector<Tensor3dXf> &skips,
-                                      int length, float std_constant)
+Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
 {
-    auto res3 = res2.shuffle(std::array<long long, 3>{1, 2, 0});
-    Tensor3dXf x = res3;
+    Tensor3dXf x = mix.shuffle(std::array<long long, 3>{1, 2, 0});
     RELU relu;
     std::array<long, 3> offset = {};
     std::array<long, 3> extent;
@@ -1036,12 +1049,11 @@ Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf res2,
     extent = x.dimensions();
     extent[2] = length;
     Tensor3dXf x_slice = x.slice(offset, extent);
-    return x_slice.unaryExpr(
-        [std_constant](float x) { return std_constant * x; });
+    return x_slice.unaryExpr([this](float x) { return std_constant * x; });
 }
-Tensor3dXf DemucsModel::LSTMWorker(Tensor3dXf x, LstmState &lstm_state)
+Tensor3dXf DemucsModel::LSTMWorker(Tensor3dXf mix, LstmState &lstm_state)
 {
-    auto res1 = lstm1.forward(x.shuffle(std::array<long long, 3>{2, 0, 1}),
+    auto res1 = lstm1.forward(mix.shuffle(std::array<long long, 3>{2, 0, 1}),
                               lstm_hidden, lstm_state);
     lstm_state.is_created = false;
     auto res2 = lstm2.forward(res1, lstm_hidden, lstm_state);
@@ -1118,76 +1130,70 @@ bool DemucsModel::IsEqual(const DemucsModel &other, float tolerance)
 {
     return MaxAbsDifference(other) <= tolerance;
 }
-
 Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
 {
-    DemucsModel demucs_model;
     fs::path base_path = "../tests/test_data/dns48";
     std::ifstream input_file(base_path / "data.txt");
     demucs_model.load_from_file(input_file);
-    const int resample_lookahead = 64;
-    const int stride = 4;
-    const int depth = 5;
-    const int resample = 4;
-    const int total_stride = (pow(stride, depth)) / resample;
-    const int num_frames = 1;
-    const int frame_length = demucs_model.valid_length(1);
-    const int total_length = frame_length + resample_lookahead;
-    const int numThreads = 6;
-    const int resample_buffer = 256;
+    Tensor3dXf bigwav(1, wav.dimension(0), wav.dimension(1));
+    bigwav.chip(0, 0) = wav;
     std::vector<Tensor3dXf> buffer_audio =
-        SplitAudio(wav, total_length, total_stride);
+        SplitAudio(bigwav, total_length, total_stride);
     std::vector<Tensor3dXf> return_audio(buffer_audio.size());
     const int batch_size = 2;
     LstmState lstm_state;
     auto start = std::chrono::high_resolution_clock::now();
-
-    // Variables to accumulate total time for each worker
-    std::chrono::duration<double, std::milli> total_encoder_time(0);
-    std::chrono::duration<double, std::milli> total_lstm_time(0);
-    std::chrono::duration<double, std::milli> total_decoder_time(0);
-
     for (int i = 0; i < buffer_audio.size(); i++) {
-        auto worker_start = std::chrono::high_resolution_clock::now();
-
-        auto [res1, skips, length, std_constant] =
-            demucs_model.EncoderWorker(buffer_audio[i]);
-        auto encoder_end = std::chrono::high_resolution_clock::now();
-        total_encoder_time += (encoder_end - worker_start);
-
-        worker_start = std::chrono::high_resolution_clock::now();
-        auto res2 = demucs_model.LSTMWorker(res1, lstm_state);
-        auto lstm_end = std::chrono::high_resolution_clock::now();
-        total_lstm_time += (lstm_end - worker_start);
-
-        worker_start = std::chrono::high_resolution_clock::now();
-        return_audio[i] =
-            demucs_model.DecoderWorker(res2, skips, length, std_constant);
-        auto decoder_end = std::chrono::high_resolution_clock::now();
-        total_decoder_time += (decoder_end - worker_start);
+        return_audio[i] = feed(buffer_audio[i], lstm_state);
+        break;
     }
+    return return_audio[0].chip(0,0);
+    // return ans.chip(0,0);
+    // auto end = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> total_duration = end - start;
+    // std::cout << "Total processing time: " << total_duration.count() << " ms"
+    //           << std::endl;
+    // Tensor3dXf ret_audio = ConcatList(return_audio,2);
+    // reset_frames();
+    // return ret_audio.chip(0,0);
+}
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> total_duration = end - start;
-
-    // Output the total time for each worker
-    std::cout << "Total Encoder time: " << total_encoder_time.count() << " ms"
-              << std::endl;
-    std::cout << "Total LSTM time: " << total_lstm_time.count() << " ms"
-              << std::endl;
-    std::cout << "Total Decoder time: " << total_decoder_time.count() << " ms"
-              << std::endl;
-    std::cout << "Total processing time: " << total_duration.count() << " ms"
-              << std::endl;
-    Tensor2dXf ret_audio = CombineAudio(return_audio);
-    return ret_audio;
+Tensor3dXf DemucsStreamer::feed(Tensor3dXf wav, LstmState &lstm_state)
+{
+    assert(wav.dimension(0) == demucs_model.chin);
+    pending = ConcatList(std::vector<Tensor3dXf>{pending, wav}, 2);
+    std::vector<Tensor3dXf> outs;
+    int last_i = 0;
+    std::array<long, 3> offset;
+    std::array<long, 3> extent;
+    for (int i = 0; i + total_length < pending.dimension(2);
+         i += stride, last_i += stride) {
+        frames++;
+        offset = {0, 0, i};
+        extent = {pending.dimension(0), pending.dimension(1), total_length};
+        outs.emplace_back(demucs_model.forward(
+            pending.slice(offset, extent), lstm_state, this)); // parallelize
+        break;
+    }
+    return outs[0];
+    // offset = {0, 0, last_i};
+    // extent = {pending.dimension(0), pending.dimension(1),
+    //                                   pending.dimension(2)-last_i};
+    // pending=pending.slice(offset,extent);
+    // std::cout<<pending.dimensions()<<"pending"<<std::endl;
+    // Tensor3dXf outs_answer;
+    // if(outs.empty()){
+    //     outs_answer.resize(1, demucs_model.chin,0);
+    // }else{
+    //     outs_answer=ConcatList(outs, 2);
+    // }
+    // return outs_answer;
 }
 
 Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
                            int OutputChannels, int kernel_size, int stride,
                            int padding)
 {
-
     assert(conv_weights.dimension(0) == OutputChannels);
     assert(conv_weights.dimension(1) == InputChannels);
     assert(conv_weights.dimension(2) == kernel_size);

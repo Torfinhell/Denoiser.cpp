@@ -452,15 +452,39 @@ void TestDemucsStreamer()
         assert(prediction_tensors.dim() == 2 && "Prediction tensor must be 2D");
         Tensor2dXf input = TorchToEigen<Tensor2dXf, 2>(input_tensors);
         Tensor2dXf prediction = TorchToEigen<Tensor2dXf, 2>(prediction_tensors);
-        DemucsStreamer demucs_model;
-        if (!TestIfEqual<Tensor2dXf>(prediction, demucs_model.forward(input))) {
+        DemucsStreamer demucs_streamer;
+        Tensor2dXf predict=demucs_streamer.forward(input);
+        // std::cout<<prediction<<std::endl<<predict<<std::endl;
+        // for(int i=0;prediction.dimension(0);i++){
+        //     for(int j=0;j<prediction.dimension(1);j++){
+        //         if(abs(prediction(i,j)-predict(i,j))>1e-5){
+        //             std::cout<<i<<" "<<j<<" "<<prediction(i,j)<<" "<<predict(i,j)<<std::endl;
+        //         }
+        //     }
+        // }
+        // for(int i=0;prediction.dimension(0);i++){
+        //     for(int j=0;j<prediction.dimension(1);j++){
+        //         if(abs(prediction(i,j)-predict(i,j))>1e-5){
+        //             std::cout<<i<<" "<<j<<std::endl;
+        //         }
+        //     }
+        // }
+        if (!TestIfEqual<Tensor2dXf>(prediction, demucs_streamer.forward(input))) {
+            // Tensor2dXf predict=demucs_streamer.forward(input);
+            // for(int i=0;prediction.dimension(0);i++){
+            //     for(int j=0;j<prediction.dimension(1);j++){
+            //         if(abs(prediction(i,j)-predict(i,j))>1e-5){
+            //             std::cout<<i<<" "<<j<<std::endl;
+            //         }
+            //     }
+            // }
             std::ofstream file1("data1.txt");
             file1 << prediction;
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
                 std::to_string(
-                    MaxAbsDifference(prediction, demucs_model.forward(input))));
+                    MaxAbsDifference(prediction, demucs_streamer.forward(input))));
         }
     }
     catch (const std::exception &e) {
