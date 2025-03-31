@@ -184,9 +184,9 @@ struct DemucsModel : public Layer {
                        DemucsStreamer *streamer = nullptr);
     Tensor3dXf EncoderWorker(Tensor3dXf mix,
                              DemucsStreamer *streamer = nullptr);
-    Tensor3dXf DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer);
     Tensor3dXf LSTMWorker(Tensor3dXf x, LstmState &lstm_state);
-
+    Tensor3dXf DecoderWorker(Tensor3dXf mix,
+                             DemucsStreamer *streamer = nullptr);
     int valid_length(int length);
     bool load_from_jit_module(torch::jit::script::Module module) override;
     void load_to_file(std::ofstream &outputstream) override;
@@ -212,6 +212,8 @@ struct DemucsModel : public Layer {
           chin(chin), floor(floor)
     {
         int chin_first = chin;
+        int chout_first = chout;
+        int hidden_first = hidden;
         for (int i = 0; i < depth; i++) {
             encoders.emplace_back(hidden, ch_scale, kernel_size, stride, chout,
                                   chin);
@@ -222,7 +224,9 @@ struct DemucsModel : public Layer {
         }
         std::reverse(decoders.begin(), decoders.end());
         lstm_hidden = chin;
+        hidden = hidden_first;
         chin = chin_first;
+        chout = chout_first;
     }
 };
 
@@ -243,6 +247,9 @@ struct DemucsStreamer {
     float variance;
     Tensor3dXf resample_in;
     Tensor3dXf resample_out;
+    bool first;
+    std::vector<Tensor3dXf> conv_state;
+    std::vector<Tensor3dXf> next_state;
     DemucsStreamer(int resample_buffer = 256, int resample = 4,
                    int resample_lookahead = 64, int num_frames = 1)
         : resample_buffer(resample_buffer), resample(resample),
@@ -254,12 +261,12 @@ struct DemucsStreamer {
             (pow(demucs_model.stride, demucs_model.depth)) / resample;
         total_length = frame_length + resample_lookahead;
         pending.resize(1, demucs_model.chin, 0);
-        resample_in.resize(1,demucs_model.chin, resample_buffer);
-        resample_out.resize(1,demucs_model.chin, resample_buffer);
+        resample_in.resize(1, demucs_model.chin, resample_buffer);
+        resample_out.resize(1, demucs_model.chin, resample_buffer);
         pending.setZero();
         resample_in.setZero();
         resample_out.setZero();
-        stride = total_stride * num_frames;
+        stride = total_stride * num_frames;/////////
     }
     void reset_frames() { frames = 0; }
 };

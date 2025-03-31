@@ -370,7 +370,6 @@ class DemucsStreamer:
         while self.pending.shape[1] >= self.total_length:
             self.frames += 1
             frame = self.pending[:, :self.total_length]
-            dry_signal = frame[:, :stride]
             if demucs.normalize:
                 mono = frame.mean(0)
                 variance = (mono**2).mean()
@@ -383,12 +382,12 @@ class DemucsStreamer:
                 frame = upsample2(upsample2(frame))
             elif resample == 2:
                 frame = upsample2(frame)
-            return frame
-            # frame = frame[:, resample * resample_buffer:]  # remove pre sampling buffer
-            # frame = frame[:, :resample * self.frame_length]  # remove extra samples after window
+            frame = frame[:, resample * resample_buffer:]  # remove pre sampling buffer
+            frame = frame[:, :resample * self.frame_length]  # remove extra samples after window
 
             out, extra = self._separate_frame(frame)
-            padded_out = th.cat([self.resample_out, out, extra], 1)
+            return extra
+            padded_out = th.cat([self.resample_out, out, extra], 1)  
             self.resample_out[:] = out[:, -resample_buffer:]
             if resample == 4:
                 out = downsample2(downsample2(padded_out))
@@ -396,16 +395,14 @@ class DemucsStreamer:
                 out = downsample2(padded_out)
             else:
                 out = padded_out
-
             out = out[:, resample_buffer // resample:]
             out = out[:, :stride]
 
             if demucs.normalize:
                 out *= math.sqrt(self.variance)
-            out = self.dry * dry_signal + (1 - self.dry) * out
             outs.append(out)
             self.pending = self.pending[:, stride:]
-
+            return out
         self.total_time += time.time() - begin
         if outs:
             out = th.cat(outs, 1)
@@ -443,8 +440,8 @@ class DemucsStreamer:
                 if not first:
                     x = th.cat([prev, x], -1)
                 next_state.append(x)
+                return x[0], next_state[-1]
             skips.append(x)
-
         x = x.permute(2, 0, 1)
         x, self.lstm_state = demucs.lstm(x, self.lstm_state)
         x = x.permute(1, 2, 0)
@@ -468,15 +465,16 @@ class DemucsStreamer:
             if extra is None:
                 extra = x[..., -demucs.stride:]
             else:
+                return x[0], next_state[-1]
                 extra[..., :demucs.stride] += next_state[-1]
             x = x[..., :-demucs.stride]
-
             if not first:
                 prev = self.conv_state.pop(0)
                 x[..., :demucs.stride] += prev
             if idx != demucs.depth - 1:
                 x = decode[3](x)
                 extra = decode[3](extra)
+            
         self.conv_state = next_state
         return x[0], extra[0]
 

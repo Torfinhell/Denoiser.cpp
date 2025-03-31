@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unsupported/Eigen/CXX11/src/Tensor/TensorDeviceThreadPool.h>
 #include <vector>
 #define EIGEN_USE_MKL_ALL
@@ -251,6 +252,67 @@ bool OneEncoder::IsEqual(const OneEncoder &other, float tolerance)
     return MaxAbsDifference(other) <= tolerance;
 }
 
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;
+    if (stride == 1 && kernel_size == 1) {
+        Tensor4dXf newtensor = tensor.contract(
+            conv_weights, Eigen::array<Eigen::IndexPair<int>, 1>{
+                              {Eigen::IndexPair<int>(1, 1)}});
+        Tensor3dXf ans =
+            newtensor.shuffle(std::array<long long, 4>{3, 0, 2, 1}).chip(0, 0);
+        Tensor3dXf bias_tensor =
+            conv_bias.reshape(std::array<long long, 3>{1, OutputChannels, 1})
+                .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
+
+        return ans + bias_tensor;
+    }
+    assert(kernel_size > 0 && kernel_size <= padded_length &&
+           "Invalid kernel size");
+    assert(stride > 0 && stride <= padded_length);
+    Tensor4dXf big_tensor(1, tensor.dimension(0), tensor.dimension(1),
+                          tensor.dimension(2));
+    big_tensor.chip(0, 0) = tensor;
+    Tensor4dXf big_tensor_shuffled =
+        big_tensor.shuffle(std::array<long long, 4>{1, 2, 3, 0});
+    big_tensor = big_tensor_shuffled;
+    Tensor5dXf extracted_images = big_tensor.extract_image_patches(
+        InputChannels, kernel_size, InputChannels, stride, 1, 1,
+        Eigen::PaddingType::PADDING_VALID);
+    Tensor5dXf extracted_images_shuffle =
+        extracted_images.shuffle(std::array<long long, 5>{4, 0, 1, 2, 3});
+    Tensor4dXf get_patches = extracted_images_shuffle.chip(0, 0);
+    // Eigen::ThreadPool pool(1 /* number of threads in pool */);
+    // Eigen::ThreadPoolDevice my_device(&pool, 8 /* number of threads to use
+    // */);
+    Tensor3dXf output_tensor(OutputChannels, batch_size, new_length);
+    output_tensor = conv_weights.contract(
+        get_patches,
+        Eigen::array<Eigen::IndexPair<int>, 2>{
+            {Eigen::IndexPair<int>(1, 1), Eigen::IndexPair<int>(2, 2)}});
+    Tensor3dXf bias_tensor =
+        conv_bias.reshape(std::array<long long, 3>{OutputChannels, 1, 1})
+            .broadcast(std::array<long long, 3>{1, batch_size, new_length});
+    output_tensor += bias_tensor;
+    return output_tensor.shuffle(std::array<long long, 3>{1, 0, 2});
+}
 bool Conv1D::load_from_jit_module(torch::jit::script::Module module,
                                   std::string weights_index = "0.0")
 {
@@ -876,7 +938,12 @@ Tensor3dXf KernelUpsample2(int zeros = 56)
         t(i) = a + (b - a) * (static_cast<double>(i) / (odd_size - 1));
         t(i) = t(i) * M_PI;
     }
-    auto sinc_func = [](float x) { return (x == 0) ? 1.0f : std::sin(x) / x; };
+    // auto sinc_func = [](float x) {
+    //     return (std::abs(x) < 1e-6f) ? 1.0f : std::sin(x) / x;
+    // };
+    auto sinc_func = [](float x) {
+        return  std::sin(x) / x;
+    };
     Tensor1dXf kernel = (t.unaryExpr(sinc_func)) * window_odd;
     Tensor3dXf kernel_reshaped =
         kernel.reshape(std::array<long, 3>{1, 1, kernel.size()});
@@ -891,9 +958,10 @@ Tensor UpSample(Tensor tensor, int zeros = 56)
     conv.conv_weights = kernel;
     conv.conv_bias.resize(std::array<long, 1>{1});
     conv.conv_bias.setZero();
-    Tensor3dXf res = conv.forward(tensor.reshape(std::array<long, 3>{
-                                      tensor.size()/last_dimension, 1, last_dimension}),
-                                  1, 1, kernel.dimension(2), 1, zeros);
+    Tensor3dXf res =
+        conv.forward(tensor.reshape(std::array<long, 3>{
+                         tensor.size() / last_dimension, 1, last_dimension}),
+                     1, 1, kernel.dimension(2), 1, zeros);
     std::array<long, NumDim> extent;
     for (long i = 0; i < NumDim; i++) {
         extent[i] = res.dimension(i);
@@ -919,7 +987,7 @@ Tensor UpSample(Tensor tensor, int zeros = 56)
 }
 
 template <typename Tensor, typename TensorMore, int NumDim>
-Tensor DownSample(Tensor tensor, std::array<long, NumDim> arr, int zeros = 56)
+Tensor DownSample(Tensor tensor, int zeros = 56)
 {
     Tensor3dXf padded_tensor = tensor;
     if (tensor.dimension(NumDim - 1) % 2 != 0) {
@@ -971,47 +1039,95 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix, LstmState &lstm_state,
     //           << std::chrono::duration<double>(end - start).count()
     //           << " seconds" << std::endl;
     // start = std::chrono::high_resolution_clock::now();
-    // auto res2 = LSTMWorker(res1, lstm_state);
+    auto res2 = LSTMWorker(res1, lstm_state);
     // // end = std::chrono::high_resolution_clock::now();
     // // std::cout << "Time taken for LSTMWorker: "
     // //           << std::chrono::duration<double>(end - start).count()
     // //           << " seconds" << std::endl;
     // // start = std::chrono::high_resolution_clock::now();
-    // auto res3 = DecoderWorker(res2, streamer);
+    auto res3 = DecoderWorker(res2, streamer);
     // end = std::chrono::high_resolution_clock::now();
     // std::cout << "Time taken for DecoderWorker: "
     //           << std::chrono::duration<double>(end - start).count()
     //           << " seconds" << std::endl;
-    return res1;
+    return res1;//////////////////////////////////////
 }
 Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
 {
     Tensor3dXf mono, std;
     GetMean<Tensor3dXf, 3>(mix, mono, 1, indices_dim_3);
     if (streamer) {
-        GetMean<Tensor3dXf, 3>(mono.unaryExpr([](float x){return x*x;}), std, 2, indices_dim_3);
+        GetMean<Tensor3dXf, 3>(mono.unaryExpr([](float x) { return x * x; }),
+                               std, 2, indices_dim_3);
         std_constant = std(std::array<long, 3>{0, 0, 0});
+        assert(streamer->frames > 0 && "Frames should be at least one");
         streamer->variance =
             std_constant / static_cast<float>(streamer->frames) +
             (1 - 1 / static_cast<float>(streamer->frames)) * streamer->variance;
-        mix = mix.unaryExpr([streamer, this](float x) {
+        assert(streamer->variance > 0 && "variance should be positive");
+        mix = Tensor3dXf{mix.unaryExpr([streamer, this](float x) -> float {
             return x / (sqrt(streamer->variance) + floor);
-        });
-        std::array<long, 3> offset={0,0,(streamer->stride)-(streamer->resample_buffer)}, extent={1,1,streamer->resample_buffer};
-        return streamer->resample_in;
-        Tensor3dXf padded_mix=ConcatList(std::vector<Tensor3dXf>{streamer->resample_in, mix}, 2);
-        streamer->resample_in=mix.slice(offset,extent);
+        })};
+        std::array<long, 3> offset = {0, 0,
+                                      (streamer->stride) -
+                                          (streamer->resample_buffer)},
+                            extent = {1, 1, streamer->resample_buffer};
+        Tensor3dXf padded_mix = streamer->resample_in.concatenate(mix, 2);
+        streamer->resample_in = mix.slice(offset, extent);
         Tensor3dXf x = padded_mix;
         x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x);
         x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x);
+        offset[2] = (streamer->resample) * (streamer->resample_buffer);
+        extent[2] = (streamer->resample * streamer->frame_length);
+        Tensor3dXf other = x.slice(offset, extent);
+        x = other;
+        skips.clear();
+        streamer->next_state.clear();
+        streamer->first = streamer->conv_state.empty();
+        int frame_stride = streamer->stride * streamer->demucs_model.resample;
+        Tensor3dXf prev;
+        int demucs_stride = streamer->demucs_model.stride;
+        int demucs_kernel_size = streamer->demucs_model.kernel_size;
+        for (int i = 0; i < depth; i++) {
+            frame_stride /= demucs_stride;
+            length = x.dimension(2);
+            if (i != depth - 1) {
+                if (!streamer->first) {
+                    prev = streamer->conv_state[0];
+                    streamer->conv_state.erase(streamer->conv_state.begin());
+                    extent = prev.dimensions();
+                    offset[2] = frame_stride;
+                    extent[2] = prev.dimension(2) - frame_stride;
+                    prev = Tensor3dXf{prev.slice(offset, extent)};
+                    int tgt = (length - demucs_kernel_size) / demucs_stride + 1;
+                    int missing = tgt - prev.dimension(2);
+                    int offset_x = length - demucs_kernel_size -
+                                   demucs_stride * (missing - 1);
+                    extent = x.dimensions();
+                    offset[2] = offset_x;
+                    extent[2] = x.dimension(2) - offset_x;
+                    x = Tensor3dXf{x.slice(offset, extent)};
+                }
+                x = encoders[i].forward(x);
+                if (!streamer->first) {
+                    x = Tensor3dXf{prev.concatenate(x, 2)};
+                }
+                streamer->next_state.push_back(x);
+                return streamer->next_state.back();
+            }
+            else {
+                x = encoders[i].forward(x);
+            }
+            skips.push_back(x);
+        }
         return x;
-
     }
     else {
         GetStd<Tensor3dXf, 3>(mono, std, 2, indices_dim_3);
         std_constant = std(std::array<long, 3>{0, 0, 0});
+        assert((std_constant + floor) > 0 && "Must be positive");
         mix = mix.unaryExpr(
-            [this](float x) { return x / (sqrt(std_constant + floor)); });
+            [this](float x) { return x / (std_constant + floor); });
         length = mix.dimension(mix.NumDimensions - 1);
         Tensor3dXf x = mix;
         Eigen::array<std::pair<int, int>, 3> paddings = {};
@@ -1030,34 +1146,123 @@ Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
 }
 Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
 {
-    Tensor3dXf x = mix.shuffle(std::array<long long, 3>{1, 2, 0});
-    RELU relu;
     std::array<long, 3> offset = {};
-    std::array<long, 3> extent;
-    for (int i = 0; i < depth; i++) {
-        Tensor3dXf skip = skips[depth - 1 - i];
-        extent = skip.dimensions();
-        extent[2] = x.dimension(2);
-        x = x + skip.slice(offset, extent);
-        x = decoders[i].forward(x);
-        if (i != depth - 1) {
-            x = relu.forward(x);
+    std::array<long, 3> extent = {};
+    Tensor3dXf x = mix;
+    RELU relu;
+    if (!streamer) {
+        for (int i = 0; i < depth; i++) {
+            Tensor3dXf skip = skips[depth - 1 - i];
+            extent = skip.dimensions();
+            extent[2] = x.dimension(2);
+            x = x + skip.slice(offset, extent);
+            x = decoders[i].forward(x);
+            if (i != depth - 1) {
+                x = relu.forward(x);
+            }
         }
+        x = DownSample<Tensor3dXf, Tensor4dXf, 3>(x);
+        x = DownSample<Tensor3dXf, Tensor4dXf, 3>(x);
+        extent = x.dimensions();
+        extent[2] = length;
+        Tensor3dXf x_slice = x.slice(offset, extent);
+        return x_slice.unaryExpr([this](float x) { return std_constant * x; });
     }
-    x = DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
-    x = DownSample<Tensor3dXf, Tensor4dXf, 3>(x, indices_dim_3);
-    extent = x.dimensions();
-    extent[2] = length;
-    Tensor3dXf x_slice = x.slice(offset, extent);
-    return x_slice.unaryExpr([this](float x) { return std_constant * x; });
+    else {
+        Tensor3dXf extra;
+        Tensor3dXf prev;
+        for (int i = 0; i < depth; i++) {
+            int hidden = decoders[i].hidden;
+            int ch_scale = decoders[i].ch_scale;
+            int chout = decoders[i].chout;
+            int kernel_size = decoders[i].kernel_size;
+            int demucs_stride = decoders[i].stride;
+            Tensor3dXf skip = skips[depth - 1 - i];
+            offset[2]=0;
+            extent = skip.dimensions();
+            extent[2] = x.dimension(2);
+            x = x + skip.slice(offset, extent);
+            x = decoders[i].conv_1_1d.forward(x, hidden, hidden * ch_scale, 1,
+                                              1);
+            x = decoders[i].glu.forward(x);
+            if (extra.size() > 0) {
+                extent = skip.dimensions();
+                offset[2] = x.dimension(2);
+                extent[2] = skip.dimension(2) - offset[2];
+                skip = Tensor3dXf{skip.slice(offset, extent)};
+                extent = skip.dimensions();
+                offset[2] = 0;
+                extent[2] = extra.dimension(2);
+                extra += skip.slice(offset, extent);
+                extra = decoders[i].forward(extra);
+            }
+            x = decoders[i].conv_tr_1_1d.forward(x, hidden, chout, kernel_size,
+                                                 demucs_stride);
+            extent = x.dimensions();
+            offset[2] = x.dimension(2) - demucs_stride;
+            extent[2] = demucs_stride;
+            Tensor3dXf colum_bias =
+                decoders[i].conv_tr_1_1d.conv_tr_bias.reshape(
+                    std::array<long, 3>{
+                        1, decoders[i].conv_tr_1_1d.conv_tr_bias.size(), 1});
+            streamer->next_state.push_back(
+                x.slice(offset, extent) -
+                colum_bias.broadcast(
+                    std::array<long, 3>{x.dimension(0), 1, demucs_stride}));
+            Eigen::array<std::pair<int, int>, 3> paddings = {};
+            if (extra.size() == 0) {
+                extra = x.slice(offset, extent);
+            }
+            else {
+                paddings[2] = {0, extra.dimension(2) -
+                                      demucs_stride};
+                extra += streamer->next_state.back().pad(paddings);
+            }
+            offset[2] = 0;
+            extent[2] = x.dimension(2) - demucs_stride;
+            x = Tensor3dXf{x.slice(offset, extent)};
+            if (!streamer->first) {
+                prev = streamer->conv_state[0];
+                streamer->conv_state.erase(streamer->conv_state.begin());
+                paddings[2] = {0, x.dimension(2) - demucs_stride};
+                x += prev.pad(paddings);
+            }
+            if (i != depth - 1) {
+                x = relu.forward(x);
+                extra = relu.forward(extra);
+            }
+        }
+        Tensor3dXf out = x;
+        streamer->conv_state = streamer->next_state;
+        Tensor3dXf padded_out =
+            Tensor3dXf{streamer->resample_out.concatenate(out, 2)}.concatenate(
+                extra, 2);
+        extent = out.dimensions();
+        offset[2] = out.dimension(2) - streamer->resample_buffer;
+        extent[2] = streamer->resample_buffer;
+        streamer->resample_out = out.slice(offset, extent);
+        out = DownSample<Tensor3dXf, Tensor4dXf, 3>(padded_out);
+        out = DownSample<Tensor3dXf, Tensor4dXf, 3>(out);
+        extent = out.dimensions();
+        offset[2] = (streamer->resample_buffer) / (streamer->resample);
+        extent[2] = streamer->stride;
+        out = Tensor3dXf{out.slice(offset, extent)};
+        out = Tensor3dXf{out.unaryExpr([this, streamer](float x) {
+            return sqrt(streamer->variance) * x;
+        })};
+        
+        return out;
+    }
 }
+
 Tensor3dXf DemucsModel::LSTMWorker(Tensor3dXf mix, LstmState &lstm_state)
 {
     auto res1 = lstm1.forward(mix.shuffle(std::array<long long, 3>{2, 0, 1}),
                               lstm_hidden, lstm_state);
     lstm_state.is_created = false;
     auto res2 = lstm2.forward(res1, lstm_hidden, lstm_state);
-    return res2;
+    auto res3=res2.shuffle(std::array<long long, 3>{1, 2, 0});
+    return res3;
 }
 int DemucsModel::valid_length(int length)
 {
@@ -1071,6 +1276,7 @@ int DemucsModel::valid_length(int length)
     for (int i = 0; i < depth; i++) {
         length = (length - 1) * stride + kernel_size;
     }
+    assert(resample > 0 && "resample should be positive");
     length = static_cast<int>(std::ceil(length / resample));
     return length;
 }
@@ -1145,108 +1351,41 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < buffer_audio.size(); i++) {
         return_audio[i] = feed(buffer_audio[i], lstm_state);
-        break;
     }
-    return return_audio[0].chip(0,0);
-    // return ans.chip(0,0);
-    // auto end = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double, std::milli> total_duration = end - start;
-    // std::cout << "Total processing time: " << total_duration.count() << " ms"
-    //           << std::endl;
-    // Tensor3dXf ret_audio = ConcatList(return_audio,2);
-    // reset_frames();
-    // return ret_audio.chip(0,0);
+    // Tensor3dXf outs_rt(1, demucs_model.chin, 0);
+    // for (const Tensor3dXf &tensor : return_audio) {
+    //     outs_rt = Tensor3dXf{outs_rt.concatenate(tensor, 2)};
+    // }
+    return return_audio[2].chip(0, 0);
 }
 
 Tensor3dXf DemucsStreamer::feed(Tensor3dXf wav, LstmState &lstm_state)
 {
     assert(wav.dimension(0) == demucs_model.chin);
-    pending = ConcatList(std::vector<Tensor3dXf>{pending, wav}, 2);
+    pending = Tensor3dXf{pending.concatenate(wav, 2).eval()};
     std::vector<Tensor3dXf> outs;
     int last_i = 0;
     std::array<long, 3> offset;
     std::array<long, 3> extent;
-    for (int i = 0; i + total_length < pending.dimension(2);
+    assert(stride > 0 && "stride is positive");
+    for (int i = 0; i + total_length <= pending.dimension(2);
          i += stride, last_i += stride) {
         frames++;
         offset = {0, 0, i};
         extent = {pending.dimension(0), pending.dimension(1), total_length};
         outs.emplace_back(demucs_model.forward(
             pending.slice(offset, extent), lstm_state, this)); // parallelize
-        break;
     }
-    return outs[0];
     // offset = {0, 0, last_i};
     // extent = {pending.dimension(0), pending.dimension(1),
-    //                                   pending.dimension(2)-last_i};
-    // pending=pending.slice(offset,extent);
-    // std::cout<<pending.dimensions()<<"pending"<<std::endl;
-    // Tensor3dXf outs_answer;
-    // if(outs.empty()){
-    //     outs_answer.resize(1, demucs_model.chin,0);
-    // }else{
-    //     outs_answer=ConcatList(outs, 2);
+    //           pending.dimension(2) - last_i};
+    // pending = Tensor3dXf{pending.slice(offset, extent)};
+    // Tensor3dXf outs_answer(1, demucs_model.chin, 0);
+    // if (!outs.empty()) {
+    //     for (const Tensor3dXf &tensor : outs) {
+    //         outs_answer = Tensor3dXf{outs_answer.concatenate(tensor, 2)};
+    //     }
     // }
     // return outs_answer;
-}
-
-Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
-                           int OutputChannels, int kernel_size, int stride,
-                           int padding)
-{
-    assert(conv_weights.dimension(0) == OutputChannels);
-    assert(conv_weights.dimension(1) == InputChannels);
-    assert(conv_weights.dimension(2) == kernel_size);
-    assert(tensor.dimension(1) == InputChannels);
-
-    int batch_size = tensor.dimension(0);
-    int length = tensor.dimension(2);
-    int padded_length = length + 2 * padding;
-    int new_length = GetSize(padded_length, kernel_size, stride);
-    Eigen::array<std::pair<int, int>, 3> paddings;
-    paddings[0] = std::make_pair(0, 0);
-    paddings[1] = std::make_pair(0, 0);
-    paddings[2] = std::make_pair(padding, padding);
-
-    Tensor3dXf padded_tensor = tensor.pad(paddings);
-    tensor = padded_tensor;
-    if (stride == 1 && kernel_size == 1) {
-        Tensor4dXf newtensor = tensor.contract(
-            conv_weights, Eigen::array<Eigen::IndexPair<int>, 1>{
-                              {Eigen::IndexPair<int>(1, 1)}});
-        Tensor3dXf ans =
-            newtensor.shuffle(std::array<long long, 4>{3, 0, 2, 1}).chip(0, 0);
-        Tensor3dXf bias_tensor =
-            conv_bias.reshape(std::array<long long, 3>{1, OutputChannels, 1})
-                .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
-
-        return ans + bias_tensor;
-    }
-    assert(kernel_size > 0 && kernel_size <= padded_length);
-    assert(stride > 0 && stride <= padded_length);
-    Tensor4dXf big_tensor(1, tensor.dimension(0), tensor.dimension(1),
-                          tensor.dimension(2));
-    big_tensor.chip(0, 0) = tensor;
-    Tensor4dXf big_tensor_shuffled =
-        big_tensor.shuffle(std::array<long long, 4>{1, 2, 3, 0});
-    big_tensor = big_tensor_shuffled;
-    Tensor5dXf extracted_images = big_tensor.extract_image_patches(
-        InputChannels, kernel_size, InputChannels, stride, 1, 1,
-        Eigen::PaddingType::PADDING_VALID);
-    Tensor5dXf extracted_images_shuffle =
-        extracted_images.shuffle(std::array<long long, 5>{4, 0, 1, 2, 3});
-    Tensor4dXf get_patches = extracted_images_shuffle.chip(0, 0);
-    // Eigen::ThreadPool pool(1 /* number of threads in pool */);
-    // Eigen::ThreadPoolDevice my_device(&pool, 8 /* number of threads to use
-    // */);
-    Tensor3dXf output_tensor(OutputChannels, batch_size, new_length);
-    output_tensor = conv_weights.contract(
-        get_patches,
-        Eigen::array<Eigen::IndexPair<int>, 2>{
-            {Eigen::IndexPair<int>(1, 1), Eigen::IndexPair<int>(2, 2)}});
-    Tensor3dXf bias_tensor =
-        conv_bias.reshape(std::array<long long, 3>{OutputChannels, 1, 1})
-            .broadcast(std::array<long long, 3>{1, batch_size, new_length});
-    output_tensor += bias_tensor;
-    return output_tensor.shuffle(std::array<long long, 3>{1, 0, 2});
+    return outs[0];
 }

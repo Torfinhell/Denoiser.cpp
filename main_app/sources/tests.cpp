@@ -403,7 +403,6 @@ void TestBasicDemucsModel()
                 std::to_string(demucs_model.MaxAbsDifference(loaded_model)));
         }
         LstmState lstm_state;
-        std::vector<std::unique_lock<std::mutex>> lstm_locks;
         if (!TestIfEqual<Tensor3dXf>(prediction,
                                      demucs_model.forward(input, lstm_state))) {
             std::ofstream file1("data1.txt");
@@ -453,38 +452,15 @@ void TestDemucsStreamer()
         Tensor2dXf input = TorchToEigen<Tensor2dXf, 2>(input_tensors);
         Tensor2dXf prediction = TorchToEigen<Tensor2dXf, 2>(prediction_tensors);
         DemucsStreamer demucs_streamer;
-        Tensor2dXf predict=demucs_streamer.forward(input);
-        // std::cout<<prediction<<std::endl<<predict<<std::endl;
-        // for(int i=0;prediction.dimension(0);i++){
-        //     for(int j=0;j<prediction.dimension(1);j++){
-        //         if(abs(prediction(i,j)-predict(i,j))>1e-5){
-        //             std::cout<<i<<" "<<j<<" "<<prediction(i,j)<<" "<<predict(i,j)<<std::endl;
-        //         }
-        //     }
-        // }
-        // for(int i=0;prediction.dimension(0);i++){
-        //     for(int j=0;j<prediction.dimension(1);j++){
-        //         if(abs(prediction(i,j)-predict(i,j))>1e-5){
-        //             std::cout<<i<<" "<<j<<std::endl;
-        //         }
-        //     }
-        // }
-        if (!TestIfEqual<Tensor2dXf>(prediction, demucs_streamer.forward(input))) {
-            // Tensor2dXf predict=demucs_streamer.forward(input);
-            // for(int i=0;prediction.dimension(0);i++){
-            //     for(int j=0;j<prediction.dimension(1);j++){
-            //         if(abs(prediction(i,j)-predict(i,j))>1e-5){
-            //             std::cout<<i<<" "<<j<<std::endl;
-            //         }
-            //     }
-            // }
+        Tensor2dXf ans = demucs_streamer.forward(input);
+        std::cout<<ans.dimensions()<<prediction.dimensions()<<std::endl;
+        if (!TestIfEqual<Tensor2dXf>(prediction, ans)) {
             std::ofstream file1("data1.txt");
             file1 << prediction;
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
-                std::to_string(
-                    MaxAbsDifference(prediction, demucs_streamer.forward(input))));
+                std::to_string(MaxAbsDifference(prediction, ans)));
         }
     }
     catch (const std::exception &e) {
