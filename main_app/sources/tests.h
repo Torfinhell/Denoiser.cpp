@@ -106,3 +106,5 @@ void TestDemucsStreamer();
 void TestAudio();
 
 void TestAudioRegularForward();
+
+void TestAudioStreamerForward();

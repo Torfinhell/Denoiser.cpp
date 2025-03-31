@@ -319,7 +319,7 @@ struct DemucsStreamer {
         pending.setZero();
         resample_in.setZero();
         resample_out.setZero();
-        stride = total_stride * num_frames;/////////
+        stride = total_stride * num_frames; /////////
     }
     void reset_frames() { frames = 0; }
 };

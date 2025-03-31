@@ -92,7 +92,6 @@ Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
     }
 }
 
-
 Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
 {
     std::array<long, 3> offset = {};
@@ -127,7 +126,7 @@ Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
             int kernel_size = decoders[i].kernel_size;
             int demucs_stride = decoders[i].stride;
             Tensor3dXf skip = skips[depth - 1 - i];
-            offset[2]=0;
+            offset[2] = 0;
             extent = skip.dimensions();
             extent[2] = x.dimension(2);
             x = x + skip.slice(offset, extent);
@@ -163,8 +162,7 @@ Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
                 extra = x.slice(offset, extent);
             }
             else {
-                paddings[2] = {0, extra.dimension(2) -
-                                      demucs_stride};
+                paddings[2] = {0, extra.dimension(2) - demucs_stride};
                 extra += streamer->next_state.back().pad(paddings);
             }
             offset[2] = 0;
@@ -199,7 +197,7 @@ Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
         out = Tensor3dXf{out.unaryExpr([this, streamer](float x) {
             return sqrt(streamer->variance) * x;
         })};
-        
+
         return out;
     }
 }
@@ -210,7 +208,7 @@ Tensor3dXf DemucsModel::LSTMWorker(Tensor3dXf mix, LstmState &lstm_state)
                               lstm_hidden, lstm_state);
     lstm_state.is_created = false;
     auto res2 = lstm2.forward(res1, lstm_hidden, lstm_state);
-    auto res3=res2.shuffle(std::array<long long, 3>{1, 2, 0});
+    auto res3 = res2.shuffle(std::array<long long, 3>{1, 2, 0});
     return res3;
 }
 
@@ -232,27 +230,27 @@ int DemucsModel::valid_length(int length)
 }
 
 Tensor3dXf DemucsModel::forward(Tensor3dXf mix, LstmState &lstm_state,
-    DemucsStreamer *streamer)
+                                DemucsStreamer *streamer)
 {
-// auto start = std::chrono::high_resolution_clock::now();
-auto res1 = EncoderWorker(mix, streamer);
-// auto end = std::chrono::high_resolution_clock::now();
-// std::cout << "Time taken for EncoderWorker: "
-//           << std::chrono::duration<double>(end - start).count()
-//           << " seconds" << std::endl;
-// start = std::chrono::high_resolution_clock::now();
-auto res2 = LSTMWorker(res1, lstm_state);
-// end = std::chrono::high_resolution_clock::now();
-// std::cout << "Time taken for LSTMWorker: "
-//           << std::chrono::duration<double>(end - start).count()
-//           << " seconds" << std::endl;
-// start = std::chrono::high_resolution_clock::now();
-auto res3 = DecoderWorker(res2, streamer);
-// end = std::chrono::high_resolution_clock::now();
-// std::cout << "Time taken for DecoderWorker: "
-//           << std::chrono::duration<double>(end - start).count()
-//           << " seconds" << std::endl;
-return res3;//////////////////////////////////////
+    // auto start = std::chrono::high_resolution_clock::now();
+    auto res1 = EncoderWorker(mix, streamer);
+    // auto end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time taken for EncoderWorker: "
+    //           << std::chrono::duration<double>(end - start).count()
+    //           << " seconds" << std::endl;
+    // start = std::chrono::high_resolution_clock::now();
+    auto res2 = LSTMWorker(res1, lstm_state);
+    // end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time taken for LSTMWorker: "
+    //           << std::chrono::duration<double>(end - start).count()
+    //           << " seconds" << std::endl;
+    // start = std::chrono::high_resolution_clock::now();
+    auto res3 = DecoderWorker(res2, streamer);
+    // end = std::chrono::high_resolution_clock::now();
+    // std::cout << "Time taken for DecoderWorker: "
+    //           << std::chrono::duration<double>(end - start).count()
+    //           << " seconds" << std::endl;
+    return res3; //////////////////////////////////////
 }
 
 bool DemucsModel::load_from_jit_module(torch::jit::script::Module module)

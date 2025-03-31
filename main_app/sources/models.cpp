@@ -62,7 +62,6 @@ bool SimpleModel::IsEqual(const SimpleModel &other, float tolerance)
     return MaxAbsDifference(other) <= tolerance;
 }
 
-
 void SimpleModel::forward(Tensor1dXf tensor)
 {
     assert(tensor.dimension(0) == fc_weights.dimension(0));
@@ -71,9 +70,6 @@ void SimpleModel::forward(Tensor1dXf tensor)
     result =
         (tensor.contract(fc_weights, product_dims_first_transposed)) + fc_bias;
 }
-
-
-
 
 Tensor3dXf SimpleEncoderDecoder::forward(Tensor3dXf tensor)
 {
@@ -117,8 +113,6 @@ bool SimpleEncoderDecoder::IsEqual(const SimpleEncoderDecoder &other,
 {
     return MaxAbsDifference(other) <= tolerance;
 }
-
-
 
 Tensor3dXf SimpleEncoderDecoderLSTM::forward(Tensor3dXf tensor)
 {

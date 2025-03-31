@@ -1,4 +1,5 @@
 #include "tests.h"
+#include "audio.h"
 #include "layers.h"
 #include "tensors.h"
 #include <exception>
@@ -8,7 +9,6 @@
 #include <stdexcept>
 #include <string>
 #include <unsupported/Eigen/CXX11/Tensor>
-#include "audio.h"
 std::array<long, 1> indices_dim_1 = {0};
 std::array<long, 2> indices_dim_2 = {0, 0};
 std::array<long, 3> indices_dim_3 = {0, 0, 0};
@@ -461,7 +461,7 @@ void TestDemucsStreamer()
         }
         demucs_streamer.demucs_model.load_from_file(input_file);
         Tensor2dXf ans = demucs_streamer.forward(input);
-        std::cout<<ans.dimensions()<<prediction.dimensions()<<std::endl;
+        std::cout << ans.dimensions() << prediction.dimensions() << std::endl;
         if (!TestIfEqual<Tensor2dXf>(prediction, ans)) {
             std::ofstream file1("data1.txt");
             file1 << prediction;
@@ -481,9 +481,10 @@ void TestDemucsStreamer()
     std::cout << "DemucsStreamer Test Successfully passed" << std::endl;
 }
 
-void TestAudio(){
-    fs::path input_dir="../dataset/debug/noisy";
-    fs::path output_dir="../dataset/debug/ans";
+void TestAudio()
+{
+    fs::path input_dir = "../dataset/debug/noisy";
+    fs::path output_dir = "../dataset/debug/ans";
     DemucsModel demucs_model;
     fs::path model_path = "../tests/test_data/dns48";
     std::ifstream input_file(model_path / "data.txt");
@@ -492,10 +493,11 @@ void TestAudio(){
         return;
     }
     demucs_model.load_from_file(input_file);
-    for (const auto& entry : fs::directory_iterator(input_dir)) {
+    for (const auto &entry : fs::directory_iterator(input_dir)) {
         if (entry.is_regular_file() && entry.path().extension() == ".wav") {
             const fs::path input_file_path = entry.path();
-            const fs::path output_file_path = output_dir / input_file_path.filename();
+            const fs::path output_file_path =
+                output_dir / input_file_path.filename();
             try {
                 Tensor2dXf wav = ReadAudioFromFile(input_file_path);
                 Tensor3dXf big_wav(1, wav.dimension(0), wav.dimension(1));
@@ -503,16 +505,20 @@ void TestAudio(){
                 LstmState lstm_state;
                 Tensor3dXf ans = demucs_model.forward(big_wav, lstm_state);
                 WriteAudioFromFile(output_file_path, ans.chip(0, 0));
-                std::cout << "Processed: " << input_file_path << " -> " << output_file_path << std::endl;
-            } catch (const std::exception& e) {
-                std::cerr << "Model Processing " << input_file_path << ": " << e.what() << std::endl;
+                std::cout << "Processed: " << input_file_path << " -> "
+                          << output_file_path << std::endl;
+            }
+            catch (const std::exception &e) {
+                std::cerr << "Model Processing " << input_file_path << ": "
+                          << e.what() << std::endl;
             }
         }
     }
 }
-void TestAudioRegularForward(){
-    fs::path input_dir="../dataset/debug/noisy";
-    fs::path output_dir="../dataset/debug/ans_regular";
+void TestAudioRegularForward()
+{
+    fs::path input_dir = "../dataset/debug/noisy";
+    fs::path output_dir = "../dataset/debug/ans_regular";
     DemucsStreamer demucs_streamer;
     fs::path model_path = "../tests/test_data/dns48";
     std::ifstream input_file(model_path / "data.txt");
@@ -521,17 +527,53 @@ void TestAudioRegularForward(){
         return;
     }
     demucs_streamer.demucs_model.load_from_file(input_file);
-    for (const auto& entry : fs::directory_iterator(input_dir)) {
+    for (const auto &entry : fs::directory_iterator(input_dir)) {
         if (entry.is_regular_file() && entry.path().extension() == ".wav") {
             const fs::path input_file_path = entry.path();
-            const fs::path output_file_path = output_dir / input_file_path.filename();
+            const fs::path output_file_path =
+                output_dir / input_file_path.filename();
+            try {
+                Tensor2dXf wav = ReadAudioFromFile(input_file_path);
+                Tensor2dXf ans = demucs_streamer.forward_regular(wav);
+                WriteAudioFromFile(output_file_path, ans);
+                std::cout << "Processed: " << input_file_path << " -> "
+                          << output_file_path << std::endl;
+            }
+            catch (const std::exception &e) {
+                std::cerr << "Model Processing " << input_file_path << ": "
+                          << e.what() << std::endl;
+            }
+        }
+    }
+}
+void TestAudioStreamerForward()
+{
+    fs::path input_dir = "../dataset/debug/noisy";
+    fs::path output_dir = "../dataset/debug/ans_streamer";
+    DemucsStreamer demucs_streamer;
+    fs::path model_path = "../tests/test_data/dns48";
+    std::ifstream input_file(model_path / "data.txt");
+    if (!input_file) {
+        std::cout << model_path / "data.txt" << std::endl;
+        std::cerr << "Unable to open model file." << std::endl;
+        return;
+    }
+    demucs_streamer.demucs_model.load_from_file(input_file);
+    for (const auto &entry : fs::directory_iterator(input_dir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".wav") {
+            const fs::path input_file_path = entry.path();
+            const fs::path output_file_path =
+                output_dir / input_file_path.filename();
             try {
                 Tensor2dXf wav = ReadAudioFromFile(input_file_path);
                 Tensor2dXf ans = demucs_streamer.forward(wav);
                 WriteAudioFromFile(output_file_path, ans);
-                std::cout << "Processed: " << input_file_path << " -> " << output_file_path << std::endl;
-            } catch (const std::exception& e) {
-                std::cerr << "Model Processing " << input_file_path << ": " << e.what() << std::endl;
+                std::cout << "Processed: " << input_file_path << " -> "
+                          << output_file_path << std::endl;
+            }
+            catch (const std::exception &e) {
+                std::cerr << "Model Processing " << input_file_path << ": "
+                          << e.what() << std::endl;
             }
         }
     }

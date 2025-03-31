@@ -30,11 +30,11 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
     for (int i = 0; i < buffer_audio.size(); i++) {
         return_audio[i] = feed(buffer_audio[i], lstm_state);
     }
-    // Tensor3dXf outs_rt(1, demucs_model.chin, 0);
-    // for (const Tensor3dXf &tensor : return_audio) {
-    //     outs_rt = Tensor3dXf{outs_rt.concatenate(tensor, 2)};
-    // }
-    return return_audio[2].chip(0, 0);
+    Tensor3dXf outs_rt(1, demucs_model.chin, 0);
+    for (const Tensor3dXf &tensor : return_audio) {
+        outs_rt = Tensor3dXf{outs_rt.concatenate(tensor, 2)};
+    }
+    return outs_rt.chip(0, 0);
 }
 
 Tensor3dXf DemucsStreamer::feed(Tensor3dXf wav, LstmState &lstm_state)
@@ -54,18 +54,17 @@ Tensor3dXf DemucsStreamer::feed(Tensor3dXf wav, LstmState &lstm_state)
         outs.emplace_back(demucs_model.forward(
             pending.slice(offset, extent), lstm_state, this)); // parallelize
     }
-    // offset = {0, 0, last_i};
-    // extent = {pending.dimension(0), pending.dimension(1),
-    //           pending.dimension(2) - last_i};
-    // pending = Tensor3dXf{pending.slice(offset, extent)};
-    // Tensor3dXf outs_answer(1, demucs_model.chin, 0);
-    // if (!outs.empty()) {
-    //     for (const Tensor3dXf &tensor : outs) {
-    //         outs_answer = Tensor3dXf{outs_answer.concatenate(tensor, 2)};
-    //     }
-    // }
-    // return outs_answer;
-    return outs[0];
+    offset = {0, 0, last_i};
+    extent = {pending.dimension(0), pending.dimension(1),
+              pending.dimension(2) - last_i};
+    pending = Tensor3dXf{pending.slice(offset, extent)};
+    Tensor3dXf outs_answer(1, demucs_model.chin, 0);
+    if (!outs.empty()) {
+        for (const Tensor3dXf &tensor : outs) {
+            outs_answer = Tensor3dXf{outs_answer.concatenate(tensor, 2)};
+        }
+    }
+    return outs_answer;
 }
 
 Tensor2dXf DemucsStreamer::forward_regular(Tensor2dXf wav)

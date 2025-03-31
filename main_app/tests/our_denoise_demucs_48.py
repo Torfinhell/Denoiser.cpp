@@ -465,7 +465,6 @@ class DemucsStreamer:
             if extra is None:
                 extra = x[..., -demucs.stride:]
             else:
-                return x[0], next_state[-1]
                 extra[..., :demucs.stride] += next_state[-1]
             x = x[..., :-demucs.stride]
             if not first:

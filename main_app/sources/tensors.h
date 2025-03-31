@@ -6,4 +6,4 @@ typedef Eigen::Tensor<float, 4> Tensor4dXf;
 typedef Eigen::Tensor<float, 3> Tensor3dXf;
 typedef Eigen::Tensor<float, 2> Tensor2dXf;
 typedef Eigen::Tensor<float, 1> Tensor1dXf;
-}
+} // namespace Tensors

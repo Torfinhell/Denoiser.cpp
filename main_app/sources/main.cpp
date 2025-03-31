@@ -9,6 +9,7 @@ int main()
     // TestBasicDemucsModel();
     // TestDemucsStreamer();
     // TestAudio();
-    TestAudioRegularForward();
+    // TestAudioRegularForward();
+    TestAudioStreamerForward();
     return 0;
 }

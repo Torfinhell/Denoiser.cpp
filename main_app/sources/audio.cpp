@@ -14,29 +14,28 @@ Tensor2dXf ReadAudioFromFile(fs::path file_name)
 
     loader.Load(fileData.get(), file_name);
 
-    if (fileData->sampleRate != SUPPORTED_SAMPLE_RATE)
-    {
+    if (fileData->sampleRate != SUPPORTED_SAMPLE_RATE) {
         std::cerr << "[ERROR] demucs_mt.cpp only supports the following sample "
                      "rate (Hz): "
                   << SUPPORTED_SAMPLE_RATE << std::endl;
         exit(1);
     }
     // std::cout << "Input samples: "
-    //           << fileData->samples.size() / fileData->channelCount << std::endl;
-    // std::cout << "Length in seconds: " << fileData->lengthSeconds << std::endl;
-    // std::cout << "Number of channels: " << fileData->channelCount << std::endl;
-    if (fileData->channelCount != 1)
-    {
-        throw std::runtime_error( "[ERROR] demucs_mt.cpp only supports mono  audio");
+    //           << fileData->samples.size() / fileData->channelCount <<
+    //           std::endl;
+    // std::cout << "Length in seconds: " << fileData->lengthSeconds <<
+    // std::endl; std::cout << "Number of channels: " << fileData->channelCount
+    // << std::endl;
+    if (fileData->channelCount != 1) {
+        throw std::runtime_error(
+            "[ERROR] demucs_mt.cpp only supports mono  audio");
     }
     size_t N = fileData->samples.size() / fileData->channelCount;
     Tensor2dXf ret(1, N);
 
-    if (fileData->channelCount == 1)
-    {
-        for (size_t i = 0; i < N; ++i)
-        {
-            ret(0, i) = fileData->samples[i]; 
+    if (fileData->channelCount == 1) {
+        for (size_t i = 0; i < N; ++i) {
+            ret(0, i) = fileData->samples[i];
         }
     }
 
@@ -52,8 +51,7 @@ void WriteAudioFromFile(fs::path file_name, Tensor2dXf wav)
     fileData->sampleRate = SUPPORTED_SAMPLE_RATE;
     fileData->channelCount = 1;
     fileData->samples.resize(wav.dimension(1));
-    for (long int i = 0; i < wav.dimension(1); ++i)
-    {
+    for (long int i = 0; i < wav.dimension(1); ++i) {
         fileData->samples[i] = wav(0, i);
     }
     int encoderStatus =

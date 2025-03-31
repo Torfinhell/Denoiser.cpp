@@ -1,7 +1,7 @@
 #include "layers.h"
 #include "tests.h"
 std::vector<Tensor3dXf> SplitAudio(Tensor3dXf audio, int total_length,
-    int total_stride);
+                                   int total_stride);
 Tensor3dXf KernelUpsample2(int zeros = 56);
 template <typename Tensor, int NumDim>
 void GetMean(const Tensor &tensor, Tensor &result, int dim,
@@ -165,4 +165,3 @@ Tensor DownSample(Tensor tensor, int zeros = 56)
     Tensor out = res.slice(offset, extent).reshape(tensor_odd.dimensions());
     return (tensor_even + out).unaryExpr([](float x) { return x / 2; });
 }
-
