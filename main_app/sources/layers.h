@@ -5,6 +5,11 @@
 #include <torch/script.h>
 
 #include <vector>
+#define EIGEN_USE_MKL_ALL
+#define EIGEN_USE_BLAS
+#define EIGEN_VECTORIZE_SSE4_2
+#define PI 3.141592653589793
+
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg;
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_sec_transposed;
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_first_transposed;
@@ -14,6 +19,53 @@ extern std::array<long, 2> indices_dim_2;
 extern std::array<long, 3> indices_dim_3;
 extern std::array<long, 4> indices_dim_4;
 using namespace Tensors;
+template <typename T> T max_of_multiple(std::initializer_list<T> values)
+{
+    return *std::max_element(values.begin(), values.end());
+}
+template <typename EigenTensor, int NumDim>
+void WriteTensor(EigenTensor &tensor, std::ofstream &outputstream,
+                 std::array<long, NumDim> &indices, int current_pos = 0)
+{
+    if (current_pos == 0) {
+        for (int i = 0; i < NumDim; i++) {
+            outputstream << tensor.dimension(i) << " ";
+        }
+    }
+    if (current_pos == NumDim) {
+        outputstream << tensor(indices) << " ";
+    }
+    else {
+        for (size_t i = 0; i < tensor.dimension(current_pos); i++) {
+            indices[current_pos] = i;
+            WriteTensor<EigenTensor, NumDim>(tensor, outputstream, indices,
+                                             current_pos + 1);
+        }
+    }
+}
+
+template <typename EigenTensor, int NumDim>
+void ReadTensor(EigenTensor &tensor, std::ifstream &inputstream,
+                std::array<long, NumDim> &indices, int current_pos = 0)
+{
+    std::array<long, NumDim> dimensions;
+    if (current_pos == 0) {
+        for (int i = 0; i < NumDim; i++) {
+            inputstream >> dimensions[i];
+        }
+        tensor.resize(dimensions);
+    }
+    if (current_pos == NumDim) {
+        inputstream >> tensor(indices);
+    }
+    else {
+        for (size_t i = 0; i < tensor.dimension(current_pos); i++) {
+            indices[current_pos] = i;
+            ReadTensor<EigenTensor, NumDim>(tensor, inputstream, indices,
+                                            current_pos + 1);
+        }
+    }
+}
 struct Layer {
   public:
     virtual bool load_from_jit_module(torch::jit::script::Module module)
@@ -233,6 +285,7 @@ struct DemucsModel : public Layer {
 struct DemucsStreamer {
     Tensor2dXf forward(Tensor2dXf wav);
     Tensor3dXf feed(Tensor3dXf wav, LstmState &lstm_state);
+    Tensor2dXf forward_regular(Tensor2dXf wav);
     DemucsModel demucs_model;
     Tensor3dXf pending;
     int resample_buffer;

@@ -1,9 +1,5 @@
 #include "audio.h"
-#include "layers.h"
-#include "tensors.h"
 #include "tests.h"
-#include <mutex>
-#include <vector>
 int main()
 {
     // TestSimpleModel();
@@ -11,6 +7,8 @@ int main()
     // TestSimpleEncoderDecoder();//doesnt work
     // TestSimpleEncoderDecoderLSTM();
     // TestBasicDemucsModel();
-    TestDemucsStreamer();
+    // TestDemucsStreamer();
+    // TestAudio();
+    TestAudioRegularForward();
     return 0;
 }

@@ -48,3 +48,6 @@ tests/test_data/
 build/data.txt
 libtorch*
 .venv
+!CMakeLists.txt
+!sources/CMakeLists.txt
+libnyquist

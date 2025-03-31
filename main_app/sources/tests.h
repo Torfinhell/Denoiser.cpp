@@ -102,3 +102,7 @@ void TestSimpleEncoderDecoderLSTM();
 void TestBasicDemucsModel();
 
 void TestDemucsStreamer();
+
+void TestAudio();
+
+void TestAudioRegularForward();

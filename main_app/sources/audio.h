@@ -4,7 +4,5 @@
 #include <iostream>
 namespace fs = std::filesystem;
 using namespace Tensors;
-Tensor3dXf ReadAudioFromFile(fs::path file_name);
-std::vector<Tensor3dXf> SplitAudio(Tensor3dXf audio, int total_length,
-                                   int total_stride);
-void WriteAudioFromFile(fs::path file_name, Tensor3dXf tensor);
+Tensor2dXf ReadAudioFromFile(fs::path file_name);
+void WriteAudioFromFile(fs::path file_name, Tensor2dXf tensor);
