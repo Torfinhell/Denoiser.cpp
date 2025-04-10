@@ -232,11 +232,11 @@ struct SimpleEncoderDecoderLSTM : public Layer {
 };
 struct DemucsStreamer;
 struct DemucsModel : public Layer {
-    Tensor3dXf forward(Tensor3dXf mix, LstmState &lstm_state,
+    Tensor3dXf forward(Tensor3dXf mix,
                        DemucsStreamer *streamer = nullptr);
     Tensor3dXf EncoderWorker(Tensor3dXf mix,
                              DemucsStreamer *streamer = nullptr);
-    Tensor3dXf LSTMWorker(Tensor3dXf x, LstmState &lstm_state);
+    Tensor3dXf LSTMWorker(Tensor3dXf mix);
     Tensor3dXf DecoderWorker(Tensor3dXf mix,
                              DemucsStreamer *streamer = nullptr);
     int valid_length(int length);
@@ -248,6 +248,7 @@ struct DemucsModel : public Layer {
     ~DemucsModel() {}
     std::vector<OneDecoder> decoders;
     std::vector<OneEncoder> encoders;
+    LstmState lstm_state1, lstm_state2;
     OneLSTM lstm1, lstm2;
     int hidden, ch_scale, kernel_size, stride, chout, depth, resample;
     int lstm_hidden, chin;
@@ -284,8 +285,7 @@ struct DemucsModel : public Layer {
 
 struct DemucsStreamer {
     Tensor2dXf forward(Tensor2dXf wav);
-    Tensor3dXf feed(Tensor3dXf wav, LstmState &lstm_state);
-    Tensor2dXf forward_regular(Tensor2dXf wav);
+    Tensor3dXf feed(Tensor3dXf wav);
     DemucsModel demucs_model;
     Tensor3dXf pending;
     int resample_buffer;
@@ -323,3 +323,5 @@ struct DemucsStreamer {
     }
     void reset_frames() { frames = 0; }
 };
+
+Tensor3dXf Concat3DLast(std::vector<Tensor3dXf> vec); //concatenates along last dim

@@ -403,16 +403,15 @@ void TestBasicDemucsModel()
                 "elements: " +
                 std::to_string(demucs_model.MaxAbsDifference(loaded_model)));
         }
-        LstmState lstm_state;
         if (!TestIfEqual<Tensor3dXf>(prediction,
-                                     demucs_model.forward(input, lstm_state))) {
+                                     demucs_model.forward(input))) {
             std::ofstream file1("data1.txt");
             file1 << prediction;
             throw std::runtime_error(
                 "Error: Comparison of our prediction and known output failed."
                 "The Absolute difference is: " +
                 std::to_string(MaxAbsDifference(
-                    prediction, demucs_model.forward(input, lstm_state))));
+                    prediction, demucs_model.forward(input))));
         }
     }
     catch (const std::exception &e) {
@@ -453,8 +452,8 @@ void TestDemucsStreamer()
         Tensor2dXf input = TorchToEigen<Tensor2dXf, 2>(input_tensors);
         Tensor2dXf prediction = TorchToEigen<Tensor2dXf, 2>(prediction_tensors);
         DemucsStreamer demucs_streamer;
-        fs::path model_path = "../tests/test_data/dns48";
-        std::ifstream input_file(base_path / "data.txt");
+        fs::path model_path = "../tests/test_data/dns48/data.txt";
+        std::ifstream input_file(model_path);
         if (!input_file) {
             std::cerr << "Unable to open model file." << std::endl;
             return;
@@ -484,7 +483,7 @@ void TestDemucsStreamer()
 void TestAudio()
 {
     fs::path input_dir = "../dataset/debug/noisy";
-    fs::path output_dir = "../dataset/debug/ans";
+    fs::path output_dir = "../dataset/debug/ans_demucs";
     DemucsModel demucs_model;
     fs::path model_path = "../tests/test_data/dns48";
     std::ifstream input_file(model_path / "data.txt");
@@ -502,40 +501,8 @@ void TestAudio()
                 Tensor2dXf wav = ReadAudioFromFile(input_file_path);
                 Tensor3dXf big_wav(1, wav.dimension(0), wav.dimension(1));
                 big_wav.chip(0, 0) = wav;
-                LstmState lstm_state;
-                Tensor3dXf ans = demucs_model.forward(big_wav, lstm_state);
+                Tensor3dXf ans = demucs_model.forward(big_wav);
                 WriteAudioFromFile(output_file_path, ans.chip(0, 0));
-                std::cout << "Processed: " << input_file_path << " -> "
-                          << output_file_path << std::endl;
-            }
-            catch (const std::exception &e) {
-                std::cerr << "Model Processing " << input_file_path << ": "
-                          << e.what() << std::endl;
-            }
-        }
-    }
-}
-void TestAudioRegularForward()
-{
-    fs::path input_dir = "../dataset/debug/noisy";
-    fs::path output_dir = "../dataset/debug/ans_regular";
-    DemucsStreamer demucs_streamer;
-    fs::path model_path = "../tests/test_data/dns48";
-    std::ifstream input_file(model_path / "data.txt");
-    if (!input_file) {
-        std::cerr << "Unable to open model file." << std::endl;
-        return;
-    }
-    demucs_streamer.demucs_model.load_from_file(input_file);
-    for (const auto &entry : fs::directory_iterator(input_dir)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".wav") {
-            const fs::path input_file_path = entry.path();
-            const fs::path output_file_path =
-                output_dir / input_file_path.filename();
-            try {
-                Tensor2dXf wav = ReadAudioFromFile(input_file_path);
-                Tensor2dXf ans = demucs_streamer.forward_regular(wav);
-                WriteAudioFromFile(output_file_path, ans);
                 std::cout << "Processed: " << input_file_path << " -> "
                           << output_file_path << std::endl;
             }

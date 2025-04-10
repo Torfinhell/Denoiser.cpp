@@ -1,4 +1,6 @@
 #include "coders.h"
+#include "layers.h"
+int is_second=0;
 Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
 {
     Tensor3dXf mono, std;
@@ -19,7 +21,7 @@ Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
                                       (streamer->stride) -
                                           (streamer->resample_buffer)},
                             extent = {1, 1, streamer->resample_buffer};
-        Tensor3dXf padded_mix = streamer->resample_in.concatenate(mix, 2);
+        Tensor3dXf padded_mix = Concat3DLast({streamer->resample_in,mix});
         streamer->resample_in = mix.slice(offset, extent);
         Tensor3dXf x = padded_mix;
         x = UpSample<Tensor3dXf, Tensor4dXf, 3>(x);
@@ -57,10 +59,9 @@ Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
                 }
                 x = encoders[i].forward(x);
                 if (!streamer->first) {
-                    x = Tensor3dXf{prev.concatenate(x, 2)};
+                    x = Concat3DLast({prev, x});
                 }
                 streamer->next_state.push_back(x);
-                return streamer->next_state.back();
             }
             else {
                 x = encoders[i].forward(x);
@@ -74,7 +75,7 @@ Tensor3dXf DemucsModel::EncoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
         std_constant = std(std::array<long, 3>{0, 0, 0});
         assert((std_constant + floor) > 0 && "Must be positive");
         mix = mix.unaryExpr(
-            [this](float x) { return x / (std_constant + floor); });
+            [this](float x) { return x / (std_constant + floor);});
         length = mix.dimension(mix.NumDimensions - 1);
         Tensor3dXf x = mix;
         Eigen::array<std::pair<int, int>, 3> paddings = {};
@@ -202,12 +203,11 @@ Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix, DemucsStreamer *streamer)
     }
 }
 
-Tensor3dXf DemucsModel::LSTMWorker(Tensor3dXf mix, LstmState &lstm_state)
+Tensor3dXf DemucsModel::LSTMWorker(Tensor3dXf mix)
 {
     auto res1 = lstm1.forward(mix.shuffle(std::array<long long, 3>{2, 0, 1}),
-                              lstm_hidden, lstm_state);
-    lstm_state.is_created = false;
-    auto res2 = lstm2.forward(res1, lstm_hidden, lstm_state);
+                              lstm_hidden, lstm_state1);
+    auto res2 = lstm2.forward(res1, lstm_hidden, lstm_state2);
     auto res3 = res2.shuffle(std::array<long long, 3>{1, 2, 0});
     return res3;
 }
@@ -229,7 +229,7 @@ int DemucsModel::valid_length(int length)
     return length;
 }
 
-Tensor3dXf DemucsModel::forward(Tensor3dXf mix, LstmState &lstm_state,
+Tensor3dXf DemucsModel::forward(Tensor3dXf mix,
                                 DemucsStreamer *streamer)
 {
     // auto start = std::chrono::high_resolution_clock::now();
@@ -239,7 +239,7 @@ Tensor3dXf DemucsModel::forward(Tensor3dXf mix, LstmState &lstm_state,
     //           << std::chrono::duration<double>(end - start).count()
     //           << " seconds" << std::endl;
     // start = std::chrono::high_resolution_clock::now();
-    auto res2 = LSTMWorker(res1, lstm_state);
+    auto res2 = LSTMWorker(res1);
     // end = std::chrono::high_resolution_clock::now();
     // std::cout << "Time taken for LSTMWorker: "
     //           << std::chrono::duration<double>(end - start).count()

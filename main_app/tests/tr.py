@@ -199,13 +199,12 @@ def DemucsStreamerTest(x):
     counter=0
     with th.no_grad():
         while x.shape[1] >= frame_size:
-            # print(x[:, :frame_size])
             out_rt.append(streamer.feed(x[:, :frame_size]))
             x = x[:, frame_size:]
             frame_size = streamer.demucs.total_stride
     # out_rt.append(streamer.flush())
-    # out_rt = th.cat(out_rt, 1)
-    return out_rt[2]
+    out_rt = th.cat(out_rt, 1)
+    return out_rt
 if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/main_app/tests/test_data"
     # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
@@ -213,5 +212,5 @@ if __name__ == "__main__":
     # final_test()
     #read audio
     sr=16_000
-    x = th.randn(1, int(256*10))
+    x = th.randn(1, int(4*sr))
     CreateTests(DemucsStreamerTest,x,f"{AllTestsPath}/DemucsStreamer")

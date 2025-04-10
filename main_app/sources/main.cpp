@@ -8,8 +8,7 @@ int main()
     // TestSimpleEncoderDecoderLSTM();
     // TestBasicDemucsModel();
     // TestDemucsStreamer();
-    // TestAudio();
-    // TestAudioRegularForward();
-    TestAudioStreamerForward();
+    TestAudio();
+    // TestAudioStreamerForward();
     return 0;
 }

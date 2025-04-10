@@ -14,12 +14,12 @@ Tensor2dXf ReadAudioFromFile(fs::path file_name)
 
     loader.Load(fileData.get(), file_name);
 
-    if (fileData->sampleRate != SUPPORTED_SAMPLE_RATE) {
-        std::cerr << "[ERROR] demucs_mt.cpp only supports the following sample "
-                     "rate (Hz): "
-                  << SUPPORTED_SAMPLE_RATE << std::endl;
-        exit(1);
-    }
+    // if (fileData->sampleRate != SUPPORTED_SAMPLE_RATE) {
+    //     std::cerr << "[ERROR] demucs_mt.cpp only supports the following sample "
+    //                  "rate (Hz): "
+    //               << SUPPORTED_SAMPLE_RATE << std::endl;
+    //     exit(1);
+    // }
     // std::cout << "Input samples: "
     //           << fileData->samples.size() / fileData->channelCount <<
     //           std::endl;

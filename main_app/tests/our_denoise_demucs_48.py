@@ -384,9 +384,7 @@ class DemucsStreamer:
                 frame = upsample2(frame)
             frame = frame[:, resample * resample_buffer:]  # remove pre sampling buffer
             frame = frame[:, :resample * self.frame_length]  # remove extra samples after window
-
             out, extra = self._separate_frame(frame)
-            return extra
             padded_out = th.cat([self.resample_out, out, extra], 1)  
             self.resample_out[:] = out[:, -resample_buffer:]
             if resample == 4:
@@ -402,7 +400,6 @@ class DemucsStreamer:
                 out *= math.sqrt(self.variance)
             outs.append(out)
             self.pending = self.pending[:, stride:]
-            return out
         self.total_time += time.time() - begin
         if outs:
             out = th.cat(outs, 1)
@@ -439,8 +436,10 @@ class DemucsStreamer:
                 x = encode[3](x)
                 if not first:
                     x = th.cat([prev, x], -1)
+                    # if(idx==4):
+                    #     return x[0], None
                 next_state.append(x)
-                return x[0], next_state[-1]
+                # return x[0], next_state[-1]
             skips.append(x)
         x = x.permute(2, 0, 1)
         x, self.lstm_state = demucs.lstm(x, self.lstm_state)
@@ -473,7 +472,6 @@ class DemucsStreamer:
             if idx != demucs.depth - 1:
                 x = decode[3](x)
                 extra = decode[3](extra)
-            
         self.conv_state = next_state
         return x[0], extra[0]
 
