@@ -205,12 +205,43 @@ def DemucsStreamerTest(x):
     # out_rt.append(streamer.flush())
     out_rt = th.cat(out_rt, 1)
     return out_rt
+import os
+import torch as th
+import soundfile as sf
+from pathlib import Path
+def DemucsStreamerTest(x):
+    demucs = dns48()
+    streamer = DemucsStreamer(demucs)
+    out_rt = []
+    frame_size = streamer.total_length
+    with th.no_grad():
+        while x.shape[1] >= frame_size:
+            out_rt.append(streamer.feed(x[:, :frame_size]))
+            x = x[:, frame_size:]
+            frame_size = streamer.demucs.total_stride
+    out_rt = th.cat(out_rt, 1)
+    return out_rt
+
 if __name__ == "__main__":
-    AllTestsPath="/home/torfinhell/Denoiser.cpp/main_app/tests/test_data"
-    # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
-    # CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")
-    # final_test()
-    #read audio
-    sr=16_000
-    x = th.randn(1, int(4*sr))
-    CreateTests(DemucsStreamerTest,x,f"{AllTestsPath}/DemucsStreamer")
+    AllTestsPath = "/home/torfinhell/Denoiser.cpp/main_app/tests/test_data"
+    input_dir = "../dataset/debug/noisy"
+    output_dir = "../dataset/debug/ans_python_streamer"
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for entry in os.listdir(input_dir):
+        if entry.endswith(".wav"):
+            input_file_path = os.path.join(input_dir, entry)
+            output_file_path = os.path.join(output_dir, entry)
+
+            x, sample_rate = sf.read(input_file_path)
+            x = th.tensor(x, dtype=th.float32).unsqueeze(0)  # Convert to tensor and add batch dimension
+            print(f"Processing: {input_file_path}")
+
+            start_time = time.time()  # Start timing
+            out_rt = DemucsStreamerTest(x)
+            end_time = time.time()  # End timing
+
+            sf.write(output_file_path, out_rt.squeeze().numpy(), sample_rate)
+            elapsed_time = end_time - start_time  # Calculate elapsed time
+            print(f"Processed: {input_file_path} -> {output_file_path} | Time taken: {elapsed_time:.2f} seconds")
