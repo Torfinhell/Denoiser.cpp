@@ -488,7 +488,6 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize,
         lstm_state.cell_state.setZero();
         lstm_state.is_created = true;
     }
-
     auto ExtendColumn = [](Tensor2dXf column_weight,
                            long columns_count) -> Tensor2dXf {
         assert(column_weight.dimension(1) == 1);

@@ -286,6 +286,7 @@ struct DemucsModel : public Layer {
 struct DemucsStreamer {
     Tensor2dXf forward(Tensor2dXf wav);
     Tensor3dXf feed(Tensor3dXf wav);
+    Tensor3dXf flush();
     DemucsModel demucs_model;
     Tensor3dXf pending;
     int resample_buffer;

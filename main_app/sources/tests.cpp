@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <ios>
 #include <iostream>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <unsupported/Eigen/CXX11/Tensor>
@@ -495,20 +496,23 @@ void TestAudio()
     for (const auto &entry : fs::directory_iterator(input_dir)) {
         if (entry.is_regular_file() && entry.path().extension() == ".wav") {
             const fs::path input_file_path = entry.path();
-            const fs::path output_file_path =
-                output_dir / input_file_path.filename();
+            const fs::path output_file_path = output_dir / input_file_path.filename();
             try {
                 Tensor2dXf wav = ReadAudioFromFile(input_file_path);
                 Tensor3dXf big_wav(1, wav.dimension(0), wav.dimension(1));
                 big_wav.chip(0, 0) = wav;
+
+                auto start = std::chrono::high_resolution_clock::now();
                 Tensor3dXf ans = demucs_model.forward(big_wav);
+                auto end = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double, std::milli> duration = end - start;
+
                 WriteAudioFromFile(output_file_path, ans.chip(0, 0));
-                std::cout << "Processed: " << input_file_path << " -> "
-                          << output_file_path << std::endl;
+                std::cout << "Demucs Model Processed: " << input_file_path << " -> " << output_file_path
+                          << " | Time taken: " << duration.count() << " ms" << std::endl;
             }
             catch (const std::exception &e) {
-                std::cerr << "Model Processing " << input_file_path << ": "
-                          << e.what() << std::endl;
+                std::cerr << "Demucs Model Processing " << input_file_path << ": " << e.what() << std::endl;
             }
         }
     }
@@ -518,10 +522,9 @@ void TestAudioStreamerForward()
     fs::path input_dir = "../dataset/debug/noisy";
     fs::path output_dir = "../dataset/debug/ans_streamer";
     DemucsStreamer demucs_streamer;
-    fs::path model_path = "../tests/test_data/dns48";
-    std::ifstream input_file(model_path / "data.txt");
+    fs::path model_path = "../tests/test_data/dns48/data.txt";
+    std::ifstream input_file(model_path);
     if (!input_file) {
-        std::cout << model_path / "data.txt" << std::endl;
         std::cerr << "Unable to open model file." << std::endl;
         return;
     }
@@ -529,19 +532,69 @@ void TestAudioStreamerForward()
     for (const auto &entry : fs::directory_iterator(input_dir)) {
         if (entry.is_regular_file() && entry.path().extension() == ".wav") {
             const fs::path input_file_path = entry.path();
-            const fs::path output_file_path =
-                output_dir / input_file_path.filename();
+            const fs::path output_file_path = output_dir / input_file_path.filename();
             try {
                 Tensor2dXf wav = ReadAudioFromFile(input_file_path);
-                Tensor2dXf ans = demucs_streamer.forward(wav);
+                Tensor3dXf bigwav(1, wav.dimension(0), wav.dimension(1));
+                bigwav.chip(0,0)=wav;
+                auto start = std::chrono::high_resolution_clock::now();
+                Tensor2dXf ans = demucs_streamer.feed(bigwav).chip(0,0);
+                auto end = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double, std::milli> duration = end - start;
+
                 WriteAudioFromFile(output_file_path, ans);
-                std::cout << "Processed: " << input_file_path << " -> "
-                          << output_file_path << std::endl;
+                std::cout << "Streamer Processed: " << input_file_path << " -> " << output_file_path
+                          << " | Time taken: " << duration.count() << " ms" << std::endl;
             }
             catch (const std::exception &e) {
-                std::cerr << "Model Processing " << input_file_path << ": "
-                          << e.what() << std::endl;
+                std::cerr << "Streamer Model Processing " << input_file_path << ": " << e.what() << std::endl;
             }
         }
     }
+}
+void GenerateTestsforAudio() {
+    fs::path input_dir = "../dataset/debug/noisy";
+    fs::path output_dir = "../dataset/debug/ans_streamer";
+    fs::path clean_dir = "../dataset/debug/clean";
+    float mean_sdr=0;
+    float mean_rtf=0;
+    int counter=0;
+    double length_in_seconds=0.0;
+    for (const auto &entry : fs::directory_iterator(input_dir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".wav") {
+            DemucsStreamer demucs_streamer;
+            fs::path model_path = "../tests/test_data/dns48";
+            std::ifstream input_file(model_path / "data.txt");
+            if (!input_file) {
+                std::cout << model_path / "data.txt" << std::endl;
+                std::cerr << "Unable to open model file." << std::endl;
+                return;
+            }
+            demucs_streamer.demucs_model.load_from_file(input_file);
+            const fs::path input_file_path = entry.path();
+            const fs::path output_file_path = output_dir / input_file_path.filename();
+            const fs::path clean_file_path =
+            clean_dir / input_file_path.filename();
+            try {
+                Tensor2dXf wav = ReadAudioFromFile(input_file_path, &length_in_seconds);
+                Tensor2dXf clean_wav = ReadAudioFromFile(clean_file_path);
+                auto start = std::chrono::high_resolution_clock::now();
+                Tensor2dXf ans = demucs_streamer.forward(wav);
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+                WriteAudioFromFile(output_file_path, ans);
+                mean_rtf+=static_cast<double>(duration) / (1000.0 * length_in_seconds);
+                mean_sdr+=compare_audio(ans,clean_wav);
+                counter++;
+                std::cout << "Streamer Processed: " << input_file_path << " -> " << output_file_path
+                          << " | Time taken: " << duration << " ms" << std::endl;
+            }
+            catch (const std::exception &e) {
+                std::cerr << "Streamer Model Processing " << input_file_path << ": " << e.what() << std::endl;
+            }
+        }
+    }
+    mean_rtf/=counter;
+    mean_sdr/=counter;
+    std::cout<< "Mean SDR is:"<<mean_sdr<<" Mean RTF is: "<<mean_rtf<<std::endl;
 }

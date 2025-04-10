@@ -1,5 +1,6 @@
 #include "audio.h"
 #include "tests.h"
+#include <iostream>
 int main()
 {
     // TestSimpleModel();
@@ -8,7 +9,8 @@ int main()
     // TestSimpleEncoderDecoderLSTM();
     // TestBasicDemucsModel();
     // TestDemucsStreamer();
-    TestAudio();
+    // TestAudio();
     // TestAudioStreamerForward();
+    GenerateTestsforAudio();
     return 0;
 }

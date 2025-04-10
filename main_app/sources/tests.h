@@ -108,3 +108,5 @@ void TestAudio();
 void TestAudioRegularForward();
 
 void TestAudioStreamerForward();
+
+void GenerateTestsforAudio();
