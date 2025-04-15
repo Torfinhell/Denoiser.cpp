@@ -1,16 +1,98 @@
 #include "audio.h"
 #include "layers.h"
+#include <Eigen/src/Core/Matrix.h>
 #include <array>
+#include <cassert>
+#include <filesystem>
 #include <iostream>
-
-Tensor3dXf Concat3DLast(std::vector<Tensor3dXf> vec){
+#include <stdexcept>
+#include <vector>
+DemucsStreamer::DemucsStreamer(int stride, int numThreads)
+    : stride(stride), numThreads(numThreads)
+{
+    assert(stride>0 && "Stride should be positive");
+    assert(numThreads>0 && "Number of Threads should be positive");
+    demucs_models.resize(numThreads);
+    fs::path model_path = "../tests/test_data/dns48";
+    std::ifstream input_file;
+    input_file.open(model_path / "data.txt");
+    if (!input_file) {
+        throw std::runtime_error("Unable to open model file.");
+    }
+    demucs_models[0].load_from_file(input_file);
+    input_file.close();
+    for (int i = 1; i < numThreads; i++) {
+        demucs_models[i] = demucs_models[i - 1];
+    }
+}
+Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
+{
+    std::vector<std::thread> threads_encoders;
+    std::vector<std::thread> threads_decoders;
+    Tensor3dXf big_wav(1, wav.dimension(0), wav.dimension(1));
+    big_wav.chip(0, 0) = wav;
+    std::vector<Tensor3dXf> buffer_audio;
+    long long frame_size = stride;
+    long long counter=0;
+    for (long long i = 0; i < big_wav.dimension(2); i += frame_size) {
+        std::array<long, 3> offset = {0, 0, i};
+        std::array<long, 3> extent = {1, big_wav.dimension(1),
+                                      (frame_size < big_wav.dimension(2) - i)
+                                          ? frame_size
+                                          : big_wav.dimension(2) - i};
+        buffer_audio.push_back(big_wav.slice(offset, extent));
+    }
+    std::vector<Tensor3dXf> encoders_result(buffer_audio.size());
+    std::vector<Tensor3dXf> lstm_result(buffer_audio.size());
+    std::vector<Tensor3dXf> decoders_result(buffer_audio.size());
+    for (int start_thread = 0; start_thread < buffer_audio.size();
+            start_thread += numThreads) {
+        for (int i = start_thread;
+                i < std::min(static_cast<int>(buffer_audio.size()),
+                            start_thread + numThreads);
+                i++) {
+            threads_encoders.emplace_back([&, i]() {
+                encoders_result[i] =
+                    demucs_models[i % numThreads].EncoderWorker(
+                        buffer_audio[i]);
+            });
+        }
+        for (auto &t : threads_encoders) {
+            t.join();
+        }
+        for (int i = start_thread;
+                i < std::min(static_cast<int>(buffer_audio.size()),
+                            start_thread + numThreads);
+                i++) {
+            lstm_result[i] = demucs_models[i % numThreads].LSTMWorker(
+                encoders_result[i]);
+                demucs_models[(i + 1) % numThreads].lstm_state1 =
+                demucs_models[i % numThreads].lstm_state1;
+                demucs_models[(i + 1) % numThreads].lstm_state2 =
+                demucs_models[i % numThreads].lstm_state2;
+        }
+        for (int i = start_thread;
+            i < std::min(static_cast<int>(buffer_audio.size()),
+                         start_thread + numThreads);
+            i++) {
+           threads_decoders.emplace_back([&, i]() {
+               decoders_result[i] =
+                   demucs_models[i % numThreads].DecoderWorker(lstm_result[i]);
+           });
+       }
+       for (auto &t : threads_decoders) {
+           t.join();
+       }
+       threads_decoders.clear();
+       threads_encoders.clear();
+    }
     Eigen::MatrixXf ret_audio;
-    for (int i = 0; i < vec.size(); i++) {
-        long long height = vec[i].dimension(1);
-        long long width = vec[i].dimension(2);
+    for (int i = 0; i < decoders_result.size(); i++) {
+        int height = decoders_result[i].dimension(1);
+        int width = decoders_result[i].dimension(2);
 
         Eigen::MatrixXf matrix = Eigen::Map<Eigen::MatrixXf>(
-            vec[i].data(), height, width);
+            decoders_result[i].data(), height, width);
         if (i == 0) {
             ret_audio = matrix;
         }
@@ -20,73 +102,7 @@ Tensor3dXf Concat3DLast(std::vector<Tensor3dXf> vec){
             ret_audio.rightCols(matrix.cols()) = matrix;
         }
     }
-    Tensor3dXf final_tensor = Eigen::TensorMap<Tensor3dXf>(
-        ret_audio.data(), 1,ret_audio.rows(), ret_audio.cols());
+    Tensor2dXf final_tensor = Eigen::TensorMap<Tensor2dXf>(
+        ret_audio.data(), ret_audio.rows(), ret_audio.cols());
     return final_tensor;
 }
-Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
-{
-    Tensor3dXf bigwav(1, wav.dimension(0), wav.dimension(1));
-    bigwav.chip(0, 0) = wav;
-    std::vector<Tensor3dXf> buffer_audio;
-    long long frame_size = total_length;
-    long long ind = 0;
-    while (ind < bigwav.dimension(2)) {
-        std::array<long, 3> offset = {0, 0, ind};
-        std::array<long, 3> extent = {bigwav.dimension(0), bigwav.dimension(1),
-                                      std::min(frame_size, bigwav.dimension(2)-ind)};
-        buffer_audio.emplace_back(bigwav.slice(offset, extent));
-        ind += frame_size;
-        frame_size = total_stride;
-    }
-    std::vector<Tensor3dXf> return_audio(buffer_audio.size());
-    const int batch_size = 2;
-    auto start = std::chrono::high_resolution_clock::now();
-    for (long long i = 0; i < buffer_audio.size(); i++) {
-        return_audio[i] = feed(buffer_audio[i]);
-    }
-    return_audio.emplace_back(flush());
-    Tensor3dXf outs_rt= Concat3DLast(return_audio);
-    return outs_rt.chip(0, 0);
-}
-
-Tensor3dXf DemucsStreamer::feed(Tensor3dXf wav)
-{
-    assert(wav.dimension(0) == demucs_model.chin);
-    pending = Concat3DLast({pending,wav});
-    std::vector<Tensor3dXf> outs;
-    long long last_i = 0;
-    std::array<long, 3> offset;
-    std::array<long, 3> extent;
-    assert(stride > 0 && "stride is positive");
-    for (long long i = 0; i + total_length <= pending.dimension(2);
-         i += stride, last_i += stride) {
-        frames++;
-        offset = {0, 0, i};
-        extent = {pending.dimension(0), pending.dimension(1), total_length};
-        outs.emplace_back(demucs_model.forward(
-            pending.slice(offset, extent), this)); // parallelize
-    }
-    offset = {0, 0, last_i};
-    extent = {pending.dimension(0), pending.dimension(1),
-              pending.dimension(2) - last_i};
-    pending = Tensor3dXf{pending.slice(offset, extent)};
-    Tensor3dXf outs_answer=Concat3DLast(outs);
-    return outs_answer;
-}
-
-
-Tensor3dXf  DemucsStreamer::flush(){
-    demucs_model.lstm_state1.is_created=false;
-    demucs_model.lstm_state2.is_created=false;
-    conv_state.clear();
-    long long pending_length=pending.dimension(2);
-    Tensor3dXf padding(1, demucs_model.chin, total_length);
-    padding.setZero();
-    Tensor3dXf out=feed(padding);
-    std::array<long, 3> offset={};
-    std::array<long, 3> extent={out.dimension(0), out.dimension(1), pending_length};
-    return out.slice(offset, extent);
-}
-
-

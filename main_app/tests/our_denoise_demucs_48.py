@@ -31,25 +31,6 @@ def kernel_upsample2(zeros:int=56):
     kernel = (sinc(t) * winodd).view(1, 1, -1)
     return kernel
 
-
-def upsample2(x, zeros:int=56):
-    """
-    Upsampling the input by 2 using sinc interpolation.
-    Smith, Julius, and Phil Gossett. "A flexible sampling-rate conversion method."
-    ICASSP'84. IEEE International Conference on Acoustics, Speech, and Signal Processing.
-    Vol. 9. IEEE, 1984.
-    """
-    other=np.array(x.shape[:])
-    time = x.shape[-1]
-    kernel = kernel_upsample2(zeros).to(x)
-    out=F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)
-    other[-1]=time
-    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(*other)
-    y = th.stack([x, out], dim=-1)
-    other[-1]=-1
-    return y.view(*other)
-
-
 def kernel_downsample2(zeros:int=56):
     """kernel_downsample2.
 
@@ -61,8 +42,39 @@ def kernel_downsample2(zeros:int=56):
     kernel = (sinc(t) * winodd).view(1, 1, -1)
     return kernel
 
+def upsample2(x, zeros=56):
+    """
+    Upsampling the input by 2 using sinc interpolation.
+    """
+    # Replace np.array with list
+    other = list(x.shape)
+    time = x.shape[-1]
+    kernel = kernel_upsample2(zeros).to(x)
+    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)
+    other[-1] = time
+    out = F.conv1d(x.view(-1, 1, time), kernel, padding=zeros)[..., 1:].view(*other)
+    y = th.stack([x, out], dim=-1)
+    other[-1] = -1
+    return y.view(*other)
 
-def downsample2(x, zeros:int=56):
+def downsample2(x, zeros=56):
+    """
+    Downsampling the input by 2 using sinc interpolation.
+    """
+    if x.shape[-1] % 2 != 0:
+        x = F.pad(x, (0, 1))
+    xeven = x[..., ::2]
+    xodd = x[..., 1::2]
+    time = xodd.shape[-1]
+    # Replace np.array with list
+    other = list(xodd.shape)
+    kernel = kernel_downsample2(zeros).to(x)
+    out = xeven + F.conv1d(xodd.view(-1, 1, time), kernel, padding=zeros)[..., :-1].view(
+        *other)
+    other[-1] = -1
+    return out.view(*other).mul(0.5)
+
+
     """
     Downsampling the input by 2 using sinc interpolation.
     Smith, Julius, and Phil Gossett. "A flexible sampling-rate conversion method."

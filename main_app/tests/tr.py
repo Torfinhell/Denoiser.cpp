@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from our_denoise_demucs_48 import *
 import os
-
+from models import *
 class TensorContainer(nn.Module):
     def __init__(self, tensor_dict):
         super().__init__()
@@ -16,19 +16,13 @@ def createTensorContainer(x:torch.Tensor):
 def save_data_to_file(data, file_path):
     data=torch.jit.script(data)
     torch.jit.save(data, file_path)
-def CreateTests(model, input:TensorContainer, path:TensorContainer, predictions=None):
+def CreateTests(model, input:TensorContainer, path:TensorContainer, save_model=None,predictions=None):
     os.makedirs(path, exist_ok=True)
     if(predictions is None):
         predictions=model(input)
-    # print(input)
-    # for layer in model.encoder:
-    #     if isinstance(layer, nn.Sequential):
-    #         for sub_layer in layer:
-    #             if isinstance(sub_layer, nn.Conv1d):
-    #                 print("Convolutional weights:", sub_layer.weight.data)
-    # print(predictions)
+    if(save_model is None):
+        save_data_to_file(model, f"{path}/model.pth")
     save_data_to_file(createTensorContainer(predictions), f"{path}/prediction.pth")
-    # save_data_to_file(model, f"{path}/model.pth")
     save_data_to_file(createTensorContainer(input), f"{path}/input.pth")
 class SimpleModel(nn.Module):
     def __init__(self):
@@ -36,11 +30,82 @@ class SimpleModel(nn.Module):
         self.fc=nn.Linear(10,2)
     def forward(self,x:torch.Tensor)->torch.Tensor:
         return self.fc(x) 
-class TestModel(nn.Module):
+class OneEncoder(nn.Module):
+    def __init__(self,
+                 chin=1,
+                 chout=1,
+                 hidden=48,
+                 ch_scale = 2,
+                 kernel_size=8,
+                 stride=4,
+                 ):
+        super().__init__()
+        self.chin = chin
+        self.chout = chout
+        self.hidden = hidden
+        self.ch_scale = ch_scale
+        self.kernel_size=kernel_size
+        self.stride=stride
+        activation = nn.GLU(1)
+        self.encoder = nn.ModuleList()
+        self.decoder = nn.ModuleList()
+        encode = []
+        encode += [
+            nn.Conv1d(chin, hidden, self.kernel_size, self.stride),
+            nn.ReLU(),
+            nn.Conv1d(hidden, hidden * ch_scale, 1), 
+            activation,
+        ]
+        self.encoder.append(nn.Sequential(*encode))
+    def forward(self, x):
+        for layer in self.encoder:
+            x=layer(x)
+        return x
+class SimpleEncoderDecoder(nn.Module):
     def __init__(self,
                  chin=1,
                  chout=1,
                  hidden=48,###########
+                 ch_scale = 2,
+                 kernel_size=8,
+                 stride=4,
+                 ):
+        super().__init__()
+        self.chin = chin
+        self.chout = chout
+        self.hidden = hidden
+        self.ch_scale = ch_scale
+        self.kernel_size=kernel_size
+        self.stride=stride
+        activation = nn.GLU(1)
+        self.encoder = nn.ModuleList()
+        self.decoder = nn.ModuleList()
+        encode = []
+        encode += [
+            nn.Conv1d(chin, hidden, self.kernel_size, self.stride),
+            nn.ReLU(),
+            nn.Conv1d(hidden, hidden * ch_scale, 1), 
+            activation,
+        ]
+        self.encoder.append(nn.Sequential(*encode))
+        decode=[]
+        decode += [
+            nn.Conv1d(hidden, ch_scale * hidden, 1), 
+            activation,
+            nn.ConvTranspose1d(hidden, chout, self.kernel_size, self.stride),
+        ]
+        self.decoder.append(nn.Sequential(*decode))
+    def forward(self, x):
+        for layer in self.encoder:
+            x=layer(x)
+        for layer in self.decoder:
+            x=layer(x)
+        return x
+class SimpleEncoderDecoderLSTM(nn.Module):
+    def __init__(self,
+                 chin=1,
+                 chout=1,
+                 hidden=48,
                  ch_scale = 2,
                  kernel_size=8,
                  stride=4,
@@ -80,7 +145,6 @@ class TestModel(nn.Module):
         for layer in self.decoder:
             x=layer(x)
         return x
-class BasicDemucs(nn.Module):
     def __init__(self,
                  chin=1,
                  chout=1,
@@ -134,12 +198,8 @@ class BasicDemucs(nn.Module):
             chout = hidden
             chin = hidden
             hidden = min(int(self.growth * hidden), self.max_hidden)
-        self.lstm = BLSTM(chin, bi=False)#not casual false
+        self.lstm = BLSTM(chin, bi=False)
     def forward(self, mix: th.Tensor):
-        # if mix.dim() == 2:
-        #     mix = mix.unsqueeze(1)
-
-        #self.normalize=true
         mono = mix.mean(dim=1, keepdim=True)
         std = mono.std(dim=-1, keepdim=True)
         mix = mix / (self.floor + std)
@@ -181,36 +241,15 @@ class BasicDemucs(nn.Module):
             length = (length - 1) * self.stride + self.kernel_size
         length = int(math.ceil(length / self.resample))
         return int(length)
-def final_test():
-    CreateTests(BasicDemucs(), torch.randn(1, 1, 256)
-,f"{AllTestsPath}/BasicDemucs")
-    sr = 16_000
-    sr_ms = sr / 1000
-    demucs = dns48()
-    # x = th.randn(1, int(sr * 4)).to("cpu")
-    x = th.randn(1, int(256)).to("cpu")
-    # out = demucs(x[None])[0]
-    CreateTests(demucs, x[None], f"{AllTestsPath}/dns48")
-def DemucsStreamerTest(x):
-    demucs = dns48()
-    streamer = DemucsStreamer(demucs)
-    out_rt = []
-    frame_size = streamer.total_length
-    counter=0
-    with th.no_grad():
-        while x.shape[1] > 0:
-            out_rt.append(streamer.feed(x[:, :frame_size]))
-            x = x[:, frame_size:]
-            frame_size = streamer.demucs.total_stride
-    out_rt.append(streamer.flush())
-    out_rt = th.cat(out_rt, 1)
-    return out_rt
+
+
+
 if __name__ == "__main__":
     AllTestsPath="/home/torfinhell/Denoiser.cpp/main_app/tests/test_data"
-    # CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
-    # CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")
-    # final_test()
-    #read audio
-    sr=16_000
-    x = th.randn(1, 4*sr)
-    CreateTests(DemucsStreamerTest,x,f"{AllTestsPath}/DemucsStreamer")
+    CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
+    CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/OneEncoder")
+    CreateTests(SimpleEncoderDecoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")
+    CreateTests(SimpleEncoderDecoderLSTM(), torch.randn(2, 1, 12),f"{AllTestsPath}/SimpleEncoderDecoderLSTM")
+    sr = 16_000
+    x = th.randn(1, int(sr * 4)).to("cpu")
+    CreateTests(dns48(), x[None], f"{AllTestsPath}/dns48")

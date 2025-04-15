@@ -118,12 +118,9 @@ Tensor3dXf SimpleEncoderDecoderLSTM::forward(Tensor3dXf tensor)
 {
     LstmState lstm_state;
     auto res1 = one_encoder.forward(tensor);
-    auto res2 = lstm1.forward(res1.shuffle(std::array<long long, 3>{2, 0, 1}),
-                              hidden, lstm_state);
-    lstm_state.is_created = false;
-    auto res3 = lstm2.forward(res2, hidden, lstm_state);
-    auto res4 =
-        one_decoder.forward(res3.shuffle(std::array<long long, 3>{1, 2, 0}));
+    auto res2=lstm1.forward(res1.shuffle(std::array<long long, 3>{2,0,1}),hidden, lstm_state);
+    auto res3=lstm2.forward(res2,hidden, lstm_state);
+    auto res4 = one_decoder.forward(res3.shuffle(std::array<long long, 3>{1,2,0}));
     return res4;
 }
 
@@ -175,3 +172,7 @@ bool SimpleEncoderDecoderLSTM::IsEqual(const SimpleEncoderDecoderLSTM &other,
 {
     return MaxAbsDifference(other) <= tolerance;
 }
+
+SimpleEncoderDecoderLSTM::SimpleEncoderDecoderLSTM(int hidden, int ch_scale,
+    int kernel_size, int stride, int chout):hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size), stride(stride), chout(chout){}
+SimpleEncoderDecoder::SimpleEncoderDecoder(int hidden, int ch_scale, int kernel_size,int stride, int chout):hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size), stride(stride), chout(chout){}

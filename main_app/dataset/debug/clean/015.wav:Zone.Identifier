@@ -1,0 +1,4 @@
+[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=https://cloudconvert.com/
+HostUrl=https://eu-central.storage.cloudconvert.com/tasks/6f9f2ed7-2336-4c98-a555-78706dfcd7af/clean.wav?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cloudconvert-production%2F20250412%2Ffra%2Fs3%2Faws4_request&X-Amz-Date=20250412T132900Z&X-Amz-Expires=86400&X-Amz-Signature=2b49d40da5e275700781879439ff7d026b24d43d4ab6036e17344cde5f0ebaff&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22clean.wav%22&response-content-type=audio%2Fwav&x-id=GetObject

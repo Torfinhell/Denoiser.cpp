@@ -135,6 +135,12 @@ bool OneEncoder::IsEqual(const OneEncoder &other, float tolerance)
 {
     return MaxAbsDifference(other) <= tolerance;
 }
+OneEncoder::OneEncoder(int hidden, int ch_scale, int kernel_size, int stride,
+                       int chout, int chin)
+    : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+      stride(stride), chout(chout), chin(chin)
+{
+}
 
 Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
                            int OutputChannels, int kernel_size, int stride,
@@ -356,6 +362,12 @@ bool OneDecoder::IsEqual(const OneDecoder &other, float tolerance)
     return MaxAbsDifference(other) <= tolerance;
 }
 
+OneDecoder::OneDecoder(int hidden, int ch_scale, int kernel_size, int stride,
+                       int chout)
+    : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+      stride(stride), chout(chout)
+{
+}
 Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
                                     int OutputChannels, int kernel_size,
                                     int stride)
@@ -488,6 +500,7 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize,
         lstm_state.cell_state.setZero();
         lstm_state.is_created = true;
     }
+
     auto ExtendColumn = [](Tensor2dXf column_weight,
                            long columns_count) -> Tensor2dXf {
         assert(column_weight.dimension(1) == 1);

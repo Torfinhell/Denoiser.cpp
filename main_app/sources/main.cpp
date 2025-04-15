@@ -1,16 +1,15 @@
-#include "audio.h"
+#include "layers.h"
 #include "tests.h"
-#include <iostream>
 int main()
 {
-    // TestSimpleModel();
-    // TestOneEncoder();
-    // TestSimpleEncoderDecoder();//doesnt work
-    // TestSimpleEncoderDecoderLSTM();
-    // TestBasicDemucsModel();
-    // TestDemucsStreamer();
-    // TestAudio();
-    // TestAudioStreamerForward();
-    GenerateTestsforAudio();
+    TestSimpleModel();
+    TestOneEncoder();
+    TestSimpleEncoderDecoder();
+    TestSimpleEncoderDecoderLSTM();
+    TestBasicDemucsModel();
+    // TestDemucsForwardAudio();
+    // TestStreamerForwardAudio();
+    // TestResampler();
+    // GenerateTestsforAudio();
     return 0;
 }

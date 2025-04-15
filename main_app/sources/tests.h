@@ -99,14 +99,18 @@ void TestSimpleEncoderDecoder();
 
 void TestSimpleEncoderDecoderLSTM();
 
-void TestBasicDemucsModel();
+void TestDNS48();
+
+
+void TestDemucsForwardAudio();
+
+void TestStreamerForwardAudio();
 
 void TestDemucsStreamer();
 
-void TestAudio();
-
-void TestAudioRegularForward();
 
 void TestAudioStreamerForward();
 
 void GenerateTestsforAudio();
+
+void TestResampler();
