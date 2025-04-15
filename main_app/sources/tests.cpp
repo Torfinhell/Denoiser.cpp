@@ -135,7 +135,6 @@ void TestOneEncoder()
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
         OneEncoder one_encoder_model, loaded_model;
-        // print_model_layers(model);
         if (!one_encoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
         }
@@ -214,7 +213,6 @@ void TestSimpleEncoderDecoder()
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
         SimpleEncoderDecoder simple_encoder_decoder_model, loaded_model;
-        // print_model_layers(model);
         if (!simple_encoder_decoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
         }
@@ -295,7 +293,6 @@ void TestSimpleEncoderDecoderLSTM()
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
         SimpleEncoderDecoderLSTM simple_encoder_decoder_model, loaded_model;
-        // print_model_layers(model);
         if (!simple_encoder_decoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
         }
@@ -370,11 +367,8 @@ void TestDNS48()
             throw std::runtime_error("Error loading the model: " +
                                      std::string(e.what()));
         }
-        // std::cout<<input_tensors.dim()<<"
-        // "<<prediction_tensors.dim()<<std::endl;
         assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
         assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
-        // print_model_layers(model);
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
         Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
         DemucsModel demucs_model, loaded_model;
@@ -413,19 +407,19 @@ void TestDNS48()
         }
     }
     catch (const std::exception &e) {
-        std::cout << "DemucsModel Model Test not passed: \n"
+        std::cout << "DNS48 Model Test not passed: \n"
                   << "Error occurred in file: " << __FILE__
                   << " at line: " << __LINE__ << "\n"
                   << e.what() << std::endl;
         return;
     }
-    std::cout << "DemucsModel Model Test Successfully passed" << std::endl;
+    std::cout << "DNS48 Model Test Successfully passed" << std::endl;
 }
 
-void TestDemucsForwardAudio()
+void TestDemucsFullForwardAudio()
 {
-    fs::path input_dir = "../dataset/debug/noisy";
-    fs::path output_dir = "../dataset/debug/ans";
+    fs::path input_dir = "../dataset/noisy";
+    fs::path output_dir = "../dataset/test_demucs_full";
     DemucsModel demucs_model;
     fs::path model_path = "../tests/test_data/dns48";
     std::ifstream input_file(model_path / "data.txt");
@@ -433,121 +427,182 @@ void TestDemucsForwardAudio()
         std::cerr << "Unable to open model file." << std::endl;
         return;
     }
-    demucs_model.load_from_file(input_file);
-    for (const auto &entry : fs::directory_iterator(input_dir)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".wav") {
-            const fs::path input_file_path = entry.path();
-            const fs::path output_file_path =
-                output_dir / input_file_path.filename();
-            try {
-                Tensor2dXf wav = ReadAudioFromFile(input_file_path);
-                Tensor3dXf big_wav(1, wav.dimension(0), wav.dimension(1));
-                big_wav.chip(0, 0) = wav;
-                Tensor3dXf ans = demucs_model.forward(big_wav);
-                WriteAudioFromFile(output_file_path, ans.chip(0, 0));
-                std::cout << "Processed: " << input_file_path << " -> "
-                          << output_file_path << std::endl;
-            }
-            catch (const std::exception &e) {
-                std::cerr << "Model Processing " << input_file_path << ": "
-                          << e.what() << std::endl;
-            }
-        }
-    }
-}
-
-void TestStreamerForwardAudio()
-{
-    fs::path input_dir = "../dataset/debug/noisy";
-    fs::path output_dir = "../dataset/debug/ans_streamer";
-    auto start = std::chrono::high_resolution_clock::now();
-    DemucsStreamer streamer;
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "Streamer creation time is: " << duration.count()
-              << "s" << std::endl;
-    int *sample_rate;
-    for (const auto &entry : fs::directory_iterator(input_dir)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".wav") {
-            const fs::path input_file_path = entry.path();
-            const fs::path output_file_path =
-                output_dir / input_file_path.filename();
-            try {
-                Tensor2dXf wav = ReadAudioFromFile(input_file_path, sample_rate);
-                start = std::chrono::high_resolution_clock::now();
-                Tensor2dXf ans = streamer.forward(wav);
-                end = std::chrono::high_resolution_clock::now();
-                duration =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-                std::cout << ", Time taken: " << duration.count() << "s" << std::endl;
-                WriteAudioFromFile(output_file_path, ans, sample_rate);
-                std::cout << "Processed: " << input_file_path << " -> "
-                          << output_file_path << std::endl;
-            }
-            catch (const std::exception &e) {
-                std::cerr << "Model Processing " << input_file_path << ": "
-                          << e.what() << std::endl;
-            }
-        }
-    }
-}
-
-void GenerateTestsforAudio() {
-    fs::path input_dir = "../dataset/debug/noisy";
-    fs::path output_dir = "../dataset/debug/ans";
-    fs::path clean_dir = "../dataset/debug/clean";
-    fs::path debug_dir = "../dataset/debug/debug";
-    for(int stride=4096*4;stride>=128;stride/=2){
-        DemucsStreamer streamer(stride);
-        float mean_sdr=0;
-        float mean_rtf=0;
-        int sdr_counter=0;
-        int mean_counter=0;
+    try {
+        demucs_model.load_from_file(input_file);
         for (const auto &entry : fs::directory_iterator(input_dir)) {
             if (entry.is_regular_file() && entry.path().extension() == ".wav") {
                 const fs::path input_file_path = entry.path();
                 const fs::path output_file_path =
                     output_dir / input_file_path.filename();
-                const fs::path clean_file_path =
-                clean_dir / input_file_path.filename();
-                const fs::path debug_file_path =
-                debug_dir / input_file_path.filename();
                 try {
-                    double length_in_seconds,length_in_seconds_second;
-                    int sample_rate;
-                    int default_sample_rate=16000;
-                    Tensor2dXf wav = ReadAudioFromFile(input_file_path, &sample_rate, &length_in_seconds);
-                    Tensor2dXf clean_wav = ReadAudioFromFile(clean_file_path);
-                    auto start = std::chrono::high_resolution_clock::now();
-                    Tensor2dXf ans = streamer.forward(wav);
-                    auto end = std::chrono::high_resolution_clock::now();
-                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-                    mean_rtf+=static_cast<double>(duration) / (1000.0 * length_in_seconds);
-                    float sdr=compare_audio(ans,clean_wav);
-                    mean_sdr += sdr;
-                    sdr_counter++;
-                    mean_counter++;
-                    WriteAudioFromFile(output_file_path, ans, &sample_rate);
-                    std::cout<< "Current Mean SDR is:"<<mean_sdr/mean_counter<<" Mean RTF is: "<<mean_rtf/sdr_counter<<std::endl;
+                    Tensor2dXf wav = ReadAudioFromFile(input_file_path);
+                    Tensor3dXf big_wav(1, wav.dimension(0), wav.dimension(1));
+                    big_wav.chip(0, 0) = wav;
+                    Tensor3dXf ans = demucs_model.forward(big_wav);
+                    WriteAudioFromFile(output_file_path, ans.chip(0, 0));
+                    std::cout << "Processed: " << input_file_path << " -> "
+                              << output_file_path << std::endl;
                 }
                 catch (const std::exception &e) {
-                    std::cerr << "Model Processing " << input_file_path << ": "
-                                << e.what() << std::endl;
+                    throw std::runtime_error("Model Processing " +
+                                             std::string(input_file_path) +
+                                             ": " + e.what() + "\n");
                 }
             }
         }
-        mean_sdr/=mean_counter;
-        mean_rtf/=sdr_counter;
-        std::cout<<" numThreads:"<<10<<" stride:"<<stride<< "Mean SDR is:"<<mean_sdr<<" Mean RTF is: "<<mean_rtf<<std::endl;
     }
+    catch (const std::exception &e) {
+        std::cout << "DemucsFullForwardAudio Test not passed: \n"
+                  << "Error occurred in file: " << __FILE__
+                  << " at line: " << __LINE__ << "\n"
+                  << e.what() << std::endl;
+        return;
+    }
+    std::cout << "TestDemucsFullForwardAudio Test Successfully passed"
+              << std::endl;
 }
 
-void TestResampler(){
-    fs::path input_dir = "../dataset/debug/noisy";
-    fs::path output_dir = "../dataset/debug/test_resample";
-    double length_in_seconds,length_in_seconds_second;
+void TestStreamerForwardAudio()
+{
+    fs::path input_dir = "../dataset/noisy";
+    fs::path output_dir = "../dataset/test_streamer";
+    auto start = std::chrono::high_resolution_clock::now();
+    DemucsStreamer streamer;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Streamer creation time is: " << duration.count() << "s"
+              << std::endl;
     int sample_rate;
-    Tensor2dXf wav = ReadAudioFromFile(input_dir / "001.wav", &sample_rate);
-    WriteAudioFromFile(output_dir / "001.wav", wav, &sample_rate);
+    try {
+        for (const auto &entry : fs::directory_iterator(input_dir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".wav") {
+                const fs::path input_file_path = entry.path();
+                const fs::path output_file_path =
+                    output_dir / input_file_path.filename();
+                try {
+                    Tensor2dXf wav =
+                        ReadAudioFromFile(input_file_path, &sample_rate);
+                    start = std::chrono::high_resolution_clock::now();
+                    Tensor2dXf ans = streamer.forward(wav);
+                    end = std::chrono::high_resolution_clock::now();
+                    duration =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            end - start);
+                    WriteAudioFromFile(output_file_path, ans, &sample_rate);
+                    std::cout << "Processed: " << input_file_path << " -> "
+                              << output_file_path << std::endl;
+                }
+                catch (const std::exception &e) {
+                    throw std::runtime_error("Model Processing " +
+                                             std::string(input_file_path) +
+                                             ": " + e.what() + "\n");
+                }
+            }
+        }
+    }
+    catch (const std::exception &e) {
+        std::cout << "StreamerForwardAudio Test not passed: \n"
+                  << "Error occurred in file: " << __FILE__
+                  << " at line: " << __LINE__ << "\n"
+                  << e.what() << std::endl;
+        return;
+    }
+    std::cout << "StreamerForwardAudio Test Successfully passed" << std::endl;
+}
+
+void GenerateTestsforAudio()
+{
+    fs::path input_dir = "../dataset/noisy";
+    fs::path output_dir = "../dataset/test_sdr";
+    fs::path clean_dir = "../dataset/clean";
+    fs::path debug_dir = "../dataset/debug";
+    try {
+        for (int stride = 4096 * 4; stride >= 128; stride /= 2) {
+            DemucsStreamer streamer(stride);
+            float mean_sdr = 0;
+            float mean_rtf = 0;
+            int sdr_counter = 0;
+            int mean_counter = 0;
+            for (const auto &entry : fs::directory_iterator(input_dir)) {
+                if (entry.is_regular_file() &&
+                    entry.path().extension() == ".wav") {
+                    const fs::path input_file_path = entry.path();
+                    const fs::path output_file_path =
+                        output_dir / input_file_path.filename();
+                    const fs::path clean_file_path =
+                        clean_dir / input_file_path.filename();
+                    const fs::path debug_file_path =
+                        debug_dir / input_file_path.filename();
+                    try {
+                        double length_in_seconds;
+                        int sample_rate;
+                        Tensor2dXf wav = ReadAudioFromFile(
+                            input_file_path, &sample_rate, &length_in_seconds);
+                        Tensor2dXf clean_wav =
+                            ReadAudioFromFile(clean_file_path);
+                        auto start = std::chrono::high_resolution_clock::now();
+                        Tensor2dXf ans = streamer.forward(wav);
+                        auto end = std::chrono::high_resolution_clock::now();
+                        auto duration =
+                            std::chrono::duration_cast<
+                                std::chrono::milliseconds>(end - start)
+                                .count();
+                        Tensor2dXf resampled_ans = WriteAudioFromFile(
+                            output_file_path, ans, &sample_rate);
+                        Tensor2dXf resampled_clean_wav = WriteAudioFromFile(
+                            output_file_path, clean_wav, &sample_rate);
+                        mean_rtf += static_cast<double>(duration) /
+                                    (1000.0 * length_in_seconds);
+                        float sdr =
+                            compare_audio(resampled_ans, resampled_clean_wav);
+                        mean_sdr += sdr;
+                        sdr_counter++;
+                        mean_counter++;
+                        std::cout
+                            << "Current Mean SDR is:" << mean_sdr / mean_counter
+                            << " Mean RTF is: " << mean_rtf / sdr_counter
+                            << std::endl;
+                    }
+                    catch (const std::exception &e) {
+                        std::cerr << "Model Processing " << input_file_path
+                                  << ": " << e.what() << std::endl;
+                    }
+                }
+            }
+
+            mean_sdr /= mean_counter;
+            mean_rtf /= sdr_counter;
+            std::cout << " numThreads:" << 10 << " stride:" << stride
+                      << "Mean SDR is:" << mean_sdr
+                      << " Mean RTF is: " << mean_rtf << std::endl;
+        }
+    }
+    catch (const std::exception &e) {
+        std::cout << "GenerateTestsforAudio not passed: \n"
+                  << "Error occurred in file: " << __FILE__
+                  << " at line: " << __LINE__ << "\n"
+                  << e.what() << std::endl;
+        return;
+    }
+    std::cout << "GenerateTestsforAudio Successfully passed" << std::endl;
+}
+
+void TestResampler()
+{
+    try {
+        fs::path input_dir = "../dataset/noisy";
+        fs::path output_dir = "../dataset/test_resample";
+        int sample_rate;
+        Tensor2dXf wav = ReadAudioFromFile(input_dir / "001.wav", &sample_rate);
+        WriteAudioFromFile(output_dir / "001.wav", wav, &sample_rate);
+    }
+    catch (const std::exception &e) {
+        std::cout << "TestResampler not passed: \n"
+                  << "Error occurred in file: " << __FILE__
+                  << " at line: " << __LINE__ << "\n"
+                  << e.what() << std::endl;
+        return;
+    }
+    std::cout << "TestResampler Successfully passed" << std::endl;
 }

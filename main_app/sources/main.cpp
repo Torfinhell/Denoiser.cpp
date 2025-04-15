@@ -6,10 +6,10 @@ int main()
     TestOneEncoder();
     TestSimpleEncoderDecoder();
     TestSimpleEncoderDecoderLSTM();
-    TestBasicDemucsModel();
-    // TestDemucsForwardAudio();
-    // TestStreamerForwardAudio();
-    // TestResampler();
-    // GenerateTestsforAudio();
+    TestDNS48();
+    TestDemucsFullForwardAudio();
+    TestStreamerForwardAudio();
+    TestResampler();
+    GenerateTestsforAudio();
     return 0;
 }

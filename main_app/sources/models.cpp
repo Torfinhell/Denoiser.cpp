@@ -1,5 +1,5 @@
 #include "coders.h"
-bool SimpleModel::load_from_jit_module(torch::jit::script::Module module)
+bool SimpleModel::load_from_jit_module(const torch::jit::script::Module &module)
 {
     try {
         for (const auto &param : module.named_parameters()) {
@@ -26,7 +26,7 @@ bool SimpleModel::load_from_jit_module(torch::jit::script::Module module)
         return false;
     }
     catch (const std::exception &e) {
-        std::cerr << "Standard exception: " << e.what() << std::endl;
+        std::cerr << "Other exception: " << e.what() << std::endl;
         return false;
     }
 
@@ -45,19 +45,19 @@ void SimpleModel::load_from_file(std::ifstream &inputstream)
     ReadTensor<Tensor1dXf, 1>(fc_bias, inputstream, indices_dim_1);
 }
 
-float SimpleModel::MaxAbsDifference(const SimpleModel &other)
+float SimpleModel::MaxAbsDifference(const SimpleModel &other) const
 {
     assert(fc_weights.size() == other.fc_weights.size() &&
            "Weights must be of the same size");
     assert(fc_bias.size() == other.fc_bias.size() &&
            "Biases must be of the same size");
     float weight_diff =
-        ::MaxAbsDifference<Tensor2dXf>(other.fc_weights, fc_weights);
-    float bias_diff = ::MaxAbsDifference<Tensor1dXf>(other.fc_bias, fc_bias);
+        ::MaxAbsDifference<Tensor2dXf>(other.fc_weights, fc_weights); 
+    float bias_diff = ::MaxAbsDifference<Tensor1dXf>(other.fc_bias, fc_bias); 
     return std::max(weight_diff, bias_diff);
 }
 
-bool SimpleModel::IsEqual(const SimpleModel &other, float tolerance)
+bool SimpleModel::IsEqual(const SimpleModel &other, float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -79,7 +79,7 @@ Tensor3dXf SimpleEncoderDecoder::forward(Tensor3dXf tensor)
 }
 
 bool SimpleEncoderDecoder::load_from_jit_module(
-    torch::jit::script::Module module)
+    const torch::jit::script::Module &module)
 {
     if (!one_encoder.load_from_jit_module(module)) {
         return false;
@@ -102,14 +102,14 @@ void SimpleEncoderDecoder::load_from_file(std::ifstream &inputstream)
     one_decoder.load_from_file(inputstream);
 }
 
-float SimpleEncoderDecoder::MaxAbsDifference(const SimpleEncoderDecoder &other)
+float SimpleEncoderDecoder::MaxAbsDifference(const SimpleEncoderDecoder &other) const
 {
     return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
                             one_decoder.MaxAbsDifference(other.one_decoder)});
 }
 
-bool SimpleEncoderDecoder::IsEqual(const SimpleEncoderDecoder &other,
-                                   float tolerance)
+bool SimpleEncoderDecoder::IsEqual(const SimpleEncoderDecoder &other, 
+                                   float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -118,14 +118,16 @@ Tensor3dXf SimpleEncoderDecoderLSTM::forward(Tensor3dXf tensor)
 {
     LstmState lstm_state;
     auto res1 = one_encoder.forward(tensor);
-    auto res2=lstm1.forward(res1.shuffle(std::array<long long, 3>{2,0,1}),hidden, lstm_state);
-    auto res3=lstm2.forward(res2,hidden, lstm_state);
-    auto res4 = one_decoder.forward(res3.shuffle(std::array<long long, 3>{1,2,0}));
+    auto res2 = lstm1.forward(res1.shuffle(std::array<long long, 3>{2, 0, 1}),
+                              hidden, lstm_state);
+    auto res3 = lstm2.forward(res2, hidden, lstm_state);
+    auto res4 =
+        one_decoder.forward(res3.shuffle(std::array<long long, 3>{1, 2, 0}));
     return res4;
 }
 
 bool SimpleEncoderDecoderLSTM::load_from_jit_module(
-    torch::jit::script::Module module)
+    const torch::jit::script::Module &module)
 {
     if (!one_encoder.load_from_jit_module(module)) {
         return false;
@@ -158,8 +160,8 @@ void SimpleEncoderDecoderLSTM::load_from_file(std::ifstream &inputstream)
     one_decoder.load_from_file(inputstream);
 }
 
-float SimpleEncoderDecoderLSTM::MaxAbsDifference(
-    const SimpleEncoderDecoderLSTM &other)
+float SimpleEncoderDecoderLSTM::MaxAbsDifference( 
+    const SimpleEncoderDecoderLSTM &other)const
 {
     return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
                             one_decoder.MaxAbsDifference(other.one_decoder),
@@ -167,12 +169,23 @@ float SimpleEncoderDecoderLSTM::MaxAbsDifference(
                             lstm2.MaxAbsDifference(other.lstm2)});
 }
 
-bool SimpleEncoderDecoderLSTM::IsEqual(const SimpleEncoderDecoderLSTM &other,
-                                       float tolerance)
+bool SimpleEncoderDecoderLSTM::IsEqual(const SimpleEncoderDecoderLSTM &other, 
+                                       float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
 
 SimpleEncoderDecoderLSTM::SimpleEncoderDecoderLSTM(int hidden, int ch_scale,
-    int kernel_size, int stride, int chout):hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size), stride(stride), chout(chout){}
-SimpleEncoderDecoder::SimpleEncoderDecoder(int hidden, int ch_scale, int kernel_size,int stride, int chout):hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size), stride(stride), chout(chout){}
+                                                   int kernel_size, int stride,
+                                                   int chout)
+    : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+      stride(stride), chout(chout)
+{
+}
+SimpleEncoderDecoder::SimpleEncoderDecoder(int hidden, int ch_scale,
+                                           int kernel_size, int stride,
+                                           int chout)
+    : hidden(hidden), ch_scale(ch_scale), kernel_size(kernel_size),
+      stride(stride), chout(chout)
+{
+}

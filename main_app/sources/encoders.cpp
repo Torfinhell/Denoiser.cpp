@@ -26,9 +26,6 @@ Tensor3dXf KernelUpsample2(int zeros)
         t(i) = a + (b - a) * (static_cast<double>(i) / (odd_size - 1));
         t(i) = t(i) * M_PI;
     }
-    // auto sinc_func = [](float x) {
-    //     return (std::abs(x) < 1e-6f) ? 1.0f : std::sin(x) / x;
-    // };
     auto sinc_func = [](float x) { return std::sin(x) / x; };
     Tensor1dXf kernel = (t.unaryExpr(sinc_func)) * window_odd;
     Tensor3dXf kernel_reshaped =
@@ -38,53 +35,14 @@ Tensor3dXf KernelUpsample2(int zeros)
 
 Tensor3dXf OneEncoder::forward(Tensor3dXf tensor)
 {
-    // Log the initial tensor shape
-    // std::cout << "Input tensor shape: " << tensor.dimensions() << std::endl;
-
-    // Measure time for conv_1_1d
-    auto start = std::chrono::high_resolution_clock::now();
     auto res1 = conv_1_1d.forward(tensor, chin, hidden, kernel_size, stride);
-    auto end = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time for conv_1_1d: "
-    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
-    //                                                                    start)
-    //                  .count()
-    //           << " microseconds" << std::endl;
-
-    // Measure time for relu
-    start = std::chrono::high_resolution_clock::now();
     auto res2 = relu.forward(res1);
-    end = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time for relu: "
-    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
-    //                                                                    start)
-    //                  .count()
-    //           << " microseconds" << std::endl;
-    // std::cout << "Input tensor shape in conv2: " << res2.dimensions() <<
-    // std::endl; Measure time for conv_2_1d
-    start = std::chrono::high_resolution_clock::now();
     auto res3 = conv_2_1d.forward(res2, hidden, hidden * ch_scale, 1);
-    end = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time for conv_2_1d: "
-    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
-    //                                                                    start)
-    //                  .count()
-    //           << " microseconds" << std::endl;
-
-    // Measure time for glu
-    start = std::chrono::high_resolution_clock::now();
     auto res4 = glu.forward(res3);
-    end = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time for glu: "
-    //           << std::chrono::duration_cast<std::chrono::microseconds>(end -
-    //                                                                    start)
-    //                  .count()
-    //           << " microseconds" << std::endl;
-
     return res4;
 }
 
-bool OneEncoder::load_from_jit_module(torch::jit::script::Module module,
+bool OneEncoder::load_from_jit_module(const torch::jit::script::Module &module,
                                       std::string weights_index)
 {
     try {
@@ -106,7 +64,7 @@ bool OneEncoder::load_from_jit_module(torch::jit::script::Module module,
         return false;
     }
     catch (const std::exception &e) {
-        std::cerr << "Standard exception: " << e.what() << std::endl;
+        std::cerr << "Other exception: " << e.what() << std::endl;
         return false;
     }
 
@@ -125,13 +83,13 @@ void OneEncoder::load_from_file(std::ifstream &inputstream)
     conv_2_1d.load_from_file(inputstream);
 }
 
-float OneEncoder::MaxAbsDifference(const OneEncoder &other)
+float OneEncoder::MaxAbsDifference(const OneEncoder &other) const 
 {
     return max_of_multiple({conv_1_1d.MaxAbsDifference(other.conv_1_1d),
                             conv_2_1d.MaxAbsDifference(other.conv_2_1d)});
 }
 
-bool OneEncoder::IsEqual(const OneEncoder &other, float tolerance)
+bool OneEncoder::IsEqual(const OneEncoder &other, float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -189,9 +147,6 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
     Tensor5dXf extracted_images_shuffle =
         extracted_images.shuffle(std::array<long long, 5>{4, 0, 1, 2, 3});
     Tensor4dXf get_patches = extracted_images_shuffle.chip(0, 0);
-    // Eigen::ThreadPool pool(1 /* number of threads in pool */);
-    // Eigen::ThreadPoolDevice my_device(&pool, 8 /* number of threads to use
-    // */);
     Tensor3dXf output_tensor(OutputChannels, batch_size, new_length);
     output_tensor = conv_weights.contract(
         get_patches,
@@ -203,7 +158,7 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
     output_tensor += bias_tensor;
     return output_tensor.shuffle(std::array<long long, 3>{1, 0, 2});
 }
-bool Conv1D::load_from_jit_module(torch::jit::script::Module module,
+bool Conv1D::load_from_jit_module(const torch::jit::script::Module &module,
                                   std::string weights_index = "0.0")
 {
     try {
@@ -238,7 +193,7 @@ bool Conv1D::load_from_jit_module(torch::jit::script::Module module,
         return false;
     }
     catch (const std::exception &e) {
-        std::cerr << "Standard exception: " << e.what() << std::endl;
+        std::cerr << "Other exception: " << e.what() << std::endl;
         return false;
     }
 
@@ -256,14 +211,14 @@ void Conv1D::load_from_file(std::ifstream &inputstream)
     ReadTensor<Tensor1dXf, 1>(conv_bias, inputstream, indices_dim_1);
 }
 
-float Conv1D::MaxAbsDifference(const Conv1D &other)
+float Conv1D::MaxAbsDifference(const Conv1D &other) const 
 {
     return max_of_multiple(
-        {::MaxAbsDifference(conv_bias, other.conv_bias),
-         ::MaxAbsDifference(conv_weights, other.conv_weights)});
+        {::MaxAbsDifference(conv_bias, other.conv_bias), 
+         ::MaxAbsDifference(conv_weights, other.conv_weights)}); 
 }
 
-bool Conv1D::IsEqual(const Conv1D &other, float tolerance)
+bool Conv1D::IsEqual(const Conv1D &other, float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -309,7 +264,7 @@ Tensor3dXf OneDecoder::forward(Tensor3dXf tensor)
     return res3;
 }
 
-bool OneDecoder::load_from_jit_module(torch::jit::script::Module module,
+bool OneDecoder::load_from_jit_module(const torch::jit::script::Module &module,
                                       std::string weights_index)
 {
     try {
@@ -331,7 +286,7 @@ bool OneDecoder::load_from_jit_module(torch::jit::script::Module module,
         return false;
     }
     catch (const std::exception &e) {
-        std::cerr << "Standard exception: " << e.what() << std::endl;
+        std::cerr << "Other exception: " << e.what() << std::endl;
         return false;
     }
 
@@ -350,14 +305,14 @@ void OneDecoder::load_from_file(std::ifstream &inputstream)
     conv_tr_1_1d.load_from_file(inputstream);
 }
 
-float OneDecoder::MaxAbsDifference(const OneDecoder &other)
+float OneDecoder::MaxAbsDifference(const OneDecoder &other) const 
 {
     return max_of_multiple<float>(
         {conv_1_1d.MaxAbsDifference(other.conv_1_1d),
          conv_tr_1_1d.MaxAbsDifference(other.conv_tr_1_1d)});
 }
 
-bool OneDecoder::IsEqual(const OneDecoder &other, float tolerance)
+bool OneDecoder::IsEqual(const OneDecoder &other, float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -413,8 +368,8 @@ Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
     return output_tensor;
 }
 
-bool ConvTranspose1d::load_from_jit_module(torch::jit::script::Module module,
-                                           std::string weights_index)
+bool ConvTranspose1d::load_from_jit_module(
+    const torch::jit::script::Module &module, std::string weights_index)
 {
     try {
         for (const auto &param : module.named_parameters()) {
@@ -448,7 +403,7 @@ bool ConvTranspose1d::load_from_jit_module(torch::jit::script::Module module,
         return false;
     }
     catch (const std::exception &e) {
-        std::cerr << "Standard exception: " << e.what() << std::endl;
+        std::cerr << "Other exception: " << e.what() << std::endl;
         return false;
     }
 
@@ -467,14 +422,14 @@ void ConvTranspose1d::load_from_file(std::ifstream &inputstream)
     ReadTensor<Tensor1dXf, 1>(conv_tr_bias, inputstream, indices_dim_1);
 }
 
-float ConvTranspose1d::MaxAbsDifference(const ConvTranspose1d &other)
+float ConvTranspose1d::MaxAbsDifference(const ConvTranspose1d &other) const 
 {
     return max_of_multiple(
-        {::MaxAbsDifference(conv_tr_bias, other.conv_tr_bias),
-         ::MaxAbsDifference(conv_tr_weights, other.conv_tr_weights)});
+        {::MaxAbsDifference(conv_tr_bias, other.conv_tr_bias), 
+         ::MaxAbsDifference(conv_tr_weights, other.conv_tr_weights)}); 
 }
 
-bool ConvTranspose1d::IsEqual(const ConvTranspose1d &other, float tolerance)
+bool ConvTranspose1d::IsEqual(const ConvTranspose1d &other, float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -485,7 +440,7 @@ int ConvTranspose1d::GetTransposedSize(int size, int kernel_size, int stride)
 }
 
 Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize,
-                            LstmState &lstm_state, bool bi)
+                            LstmState &lstm_state)
 {
     int length = tensor.dimension(0);
     int batch_size = tensor.dimension(1);
@@ -512,16 +467,16 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize,
     };
     auto tanh_func = [](float x) { return std::tanh(x); };
     auto sigmoid_func = [](float x) { return 1 / (1 + std::exp(-x)); };
-    assert(lstm_weight_hh.dimension(0) == 4 * HiddenSize &&
-           lstm_weight_hh.dimension(1) == HiddenSize);
-    assert(lstm_weight_ih.dimension(0) == 4 * HiddenSize &&
-           lstm_weight_ih.dimension(1) == input_size);
-    assert(lstm_bias_ih.dimension(0) == 4 * HiddenSize &&
-           lstm_bias_ih.dimension(1) == 1);
-    assert(lstm_bias_hh.dimension(0) == 4 * HiddenSize &&
-           lstm_bias_hh.dimension(1) == 1);
+    // assert(lstm_weight_hh.dimension(0) == 4 * HiddenSize &&
+    //        lstm_weight_hh.dimension(1) == HiddenSize);
+    // assert(lstm_weight_ih.dimension(0) == 4 * HiddenSize &&
+    //        lstm_weight_ih.dimension(1) == input_size);
+    // assert(lstm_bias_ih.dimension(0) == 4 * HiddenSize &&
+    //        lstm_bias_ih.dimension(1) == 1);
+    // assert(lstm_bias_hh.dimension(0) == 4 * HiddenSize &&
+    //        lstm_bias_hh.dimension(1) == 1);
     for (int t = 0; t < length; t++) {
-        Tensor2dXf x_t = tensor.chip(t, 0); //(input_size, batch_size)
+        Tensor2dXf x_t = tensor.chip(t, 0); 
         Tensor2dXf combined_input =
             lstm_weight_ih.contract(x_t, product_dims_sec_transposed) +
             ExtendColumn(lstm_bias_ih, batch_size);
@@ -547,7 +502,7 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize,
     return output;
 }
 
-bool OneLSTM::load_from_jit_module(torch::jit::script::Module module,
+bool OneLSTM::load_from_jit_module(const torch::jit::script::Module &module,
                                    std::string weights_index)
 {
     try {
@@ -591,7 +546,7 @@ bool OneLSTM::load_from_jit_module(torch::jit::script::Module module,
         return false;
     }
     catch (const std::exception &e) {
-        std::cerr << "Standard exception: " << e.what() << std::endl;
+        std::cerr << "Other exception: " << e.what() << std::endl;
         return false;
     }
     return true;
@@ -613,17 +568,17 @@ void OneLSTM::load_from_file(std::ifstream &inputstream)
     ReadTensor<Tensor2dXf, 2>(lstm_bias_hh, inputstream, indices_dim_2);
 }
 
-float OneLSTM::MaxAbsDifference(const OneLSTM &other)
+float OneLSTM::MaxAbsDifference(const OneLSTM &other)  const
 {
     return max_of_multiple<float>({
-        ::MaxAbsDifference(lstm_weight_ih, other.lstm_weight_ih),
-        ::MaxAbsDifference(lstm_weight_hh, other.lstm_weight_hh),
-        ::MaxAbsDifference(lstm_bias_ih, other.lstm_bias_ih),
-        ::MaxAbsDifference(lstm_bias_hh, other.lstm_bias_hh),
+        ::MaxAbsDifference(lstm_weight_ih, other.lstm_weight_ih),  
+        ::MaxAbsDifference(lstm_weight_hh, other.lstm_weight_hh),  
+        ::MaxAbsDifference(lstm_bias_ih, other.lstm_bias_ih),  
+        ::MaxAbsDifference(lstm_bias_hh, other.lstm_bias_hh),  
     });
 }
 
-bool OneLSTM::IsEqual(const OneLSTM &other, float tolerance)
+bool OneLSTM::IsEqual(const OneLSTM &other, float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }

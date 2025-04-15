@@ -1,6 +1,5 @@
 #pragma once
 #include "tensors.h"
-// #include <ATen/core/TensorBody.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -21,7 +20,6 @@ extern std::array<long, 2> indices_dim_2;
 extern std::array<long, 3> indices_dim_3;
 extern std::array<long, 4> indices_dim_4;
 using namespace Tensors;
-namespace fs = std::filesystem;
 template <typename T> T max_of_multiple(std::initializer_list<T> values)
 {
     return *std::max_element(values.begin(), values.end());
@@ -39,7 +37,7 @@ void WriteTensor(EigenTensor &tensor, std::ofstream &outputstream,
         outputstream << tensor(indices) << " ";
     }
     else {
-        for (size_t i = 0; i < tensor.dimension(current_pos); i++) {
+        for (long long i = 0; i < tensor.dimension(current_pos); i++) {
             indices[current_pos] = i;
             WriteTensor<EigenTensor, NumDim>(tensor, outputstream, indices,
                                              current_pos + 1);
@@ -62,68 +60,68 @@ void ReadTensor(EigenTensor &tensor, std::ifstream &inputstream,
         inputstream >> tensor(indices);
     }
     else {
-        for (size_t i = 0; i < tensor.dimension(current_pos); i++) {
+        for (long long i = 0; i < tensor.dimension(current_pos); i++) {
             indices[current_pos] = i;
             ReadTensor<EigenTensor, NumDim>(tensor, inputstream, indices,
                                             current_pos + 1);
         }
     }
 }
-struct SimpleModel{
+struct SimpleModel {
     void forward(Tensor1dXf tensor);
-    bool load_from_jit_module(torch::jit::script::Module module);
+    bool load_from_jit_module(const torch::jit::script::Module &module);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const SimpleModel &other);
-    bool IsEqual(const SimpleModel &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const SimpleModel &other) const;
+    bool IsEqual(const SimpleModel &other, float tolerance = 1e-5)const;
     ~SimpleModel() {}
 
     Tensor2dXf fc_weights;
     Tensor1dXf fc_bias;
     Tensor1dXf result;
 };
-struct Conv1D{
+struct Conv1D {
     Tensor3dXf forward(Tensor3dXf tensor, int InputChannels, int OutputChannels,
                        int kernel_size = 3, int stride = 1, int padding = 0);
-    bool load_from_jit_module(torch::jit::script::Module module,
+    bool load_from_jit_module(const torch::jit::script::Module &module,
                               std::string weights_index);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const Conv1D &other);
-    bool IsEqual(const Conv1D &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const Conv1D &other) const;
+    bool IsEqual(const Conv1D &other, float tolerance = 1e-5)const;
     ~Conv1D() {}
     int GetSize(int size, int kernel_size, int stride);
     Tensor3dXf conv_weights;
     Tensor1dXf conv_bias;
 };
-struct ConvTranspose1d{
+struct ConvTranspose1d {
     Tensor3dXf forward(Tensor3dXf tensor, int InputChannels, int OutputChannels,
                        int kernel_size = 3, int stride = 1);
-    bool load_from_jit_module(torch::jit::script::Module module,
+    bool load_from_jit_module(const torch::jit::script::Module &module,
                               std::string weights_index);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const ConvTranspose1d &other);
-    bool IsEqual(const ConvTranspose1d &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const ConvTranspose1d &other) const;
+    bool IsEqual(const ConvTranspose1d &other, float tolerance = 1e-5)const;
     ~ConvTranspose1d() {}
     int GetTransposedSize(int size, int kernel_size, int stride);
     Tensor3dXf conv_tr_weights;
     Tensor1dXf conv_tr_bias;
 };
-struct RELU{
+struct RELU {
     Tensor3dXf forward(Tensor3dXf tensor);
 };
-struct GLU{
+struct GLU {
     Tensor3dXf forward(Tensor3dXf tensor);
 };
-struct OneEncoder{
+struct OneEncoder {
     Tensor3dXf forward(Tensor3dXf tensor);
-    bool load_from_jit_module(torch::jit::script::Module module,
+    bool load_from_jit_module(const torch::jit::script::Module &module,
                               std::string weights_index = "0");
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const OneEncoder &other);
-    bool IsEqual(const OneEncoder &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const OneEncoder &other) const;
+    bool IsEqual(const OneEncoder &other, float tolerance = 1e-5) const;
     ~OneEncoder() {}
     Conv1D conv_1_1d;
     Conv1D conv_2_1d;
@@ -134,14 +132,14 @@ struct OneEncoder{
                int stride = 4, int chout = 1, int chin = 1);
 };
 
-struct OneDecoder{
+struct OneDecoder {
     Tensor3dXf forward(Tensor3dXf tensor);
-    bool load_from_jit_module(torch::jit::script::Module module,
+    bool load_from_jit_module(const torch::jit::script::Module &module,
                               std::string weights_index = "0");
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const OneDecoder &other);
-    bool IsEqual(const OneDecoder &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const OneDecoder &other) const;
+    bool IsEqual(const OneDecoder &other, float tolerance = 1e-5)const;
     ~OneDecoder() {}
     Conv1D conv_1_1d;
     GLU glu;
@@ -155,27 +153,26 @@ struct LstmState {
     Tensor2dXf cell_state;
     bool is_created = false;
 };
-struct OneLSTM{
-    Tensor3dXf forward(Tensor3dXf tensor, int HiddenSize, LstmState &lstm_state,
-                       bool bi = false);
-    bool load_from_jit_module(torch::jit::script::Module module,
+struct OneLSTM {
+    Tensor3dXf forward(Tensor3dXf tensor, int HiddenSize, LstmState &lstm_state);
+    bool load_from_jit_module(const torch::jit::script::Module &module,
                               std::string weights_index);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const OneLSTM &other);
-    bool IsEqual(const OneLSTM &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const OneLSTM &other) const;
+    bool IsEqual(const OneLSTM &other, float tolerance = 1e-5)const;
     ~OneLSTM() {}
     Tensor2dXf lstm_weight_ih, lstm_weight_hh;
     Tensor2dXf lstm_bias_ih, lstm_bias_hh;
 };
 
-struct SimpleEncoderDecoder{
+struct SimpleEncoderDecoder {
     Tensor3dXf forward(Tensor3dXf tensor);
-    bool load_from_jit_module(torch::jit::script::Module module);
+    bool load_from_jit_module(const torch::jit::script::Module &module);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const SimpleEncoderDecoder &other);
-    bool IsEqual(const SimpleEncoderDecoder &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const SimpleEncoderDecoder &other) const;
+    bool IsEqual(const SimpleEncoderDecoder &other, float tolerance = 1e-5)const;
     ~SimpleEncoderDecoder() {}
     OneEncoder one_encoder;
     OneDecoder one_decoder;
@@ -183,33 +180,34 @@ struct SimpleEncoderDecoder{
     SimpleEncoderDecoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                          int stride = 4, int chout = 1);
 };
-struct SimpleEncoderDecoderLSTM{
+struct SimpleEncoderDecoderLSTM {
     Tensor3dXf forward(Tensor3dXf tensor);
-    bool load_from_jit_module(torch::jit::script::Module module);
+    bool load_from_jit_module(const torch::jit::script::Module &module);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const SimpleEncoderDecoderLSTM &other);
-    bool IsEqual(const SimpleEncoderDecoderLSTM &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const SimpleEncoderDecoderLSTM &other) const;
+    bool IsEqual(const SimpleEncoderDecoderLSTM &other, float tolerance = 1e-5)const;
     ~SimpleEncoderDecoderLSTM() {}
     OneEncoder one_encoder;
     OneDecoder one_decoder;
     OneLSTM lstm1, lstm2;
     int hidden, ch_scale, kernel_size, stride, chout;
     SimpleEncoderDecoderLSTM(int hidden = 48, int ch_scale = 2,
-                             int kernel_size = 8, int stride = 4, int chout = 1);
+                             int kernel_size = 8, int stride = 4,
+                             int chout = 1);
 };
 struct DemucsStreamer;
-struct DemucsModel{
+struct DemucsModel {
     Tensor3dXf forward(Tensor3dXf mix);
     Tensor3dXf EncoderWorker(Tensor3dXf mix);
     Tensor3dXf LSTMWorker(Tensor3dXf x);
     Tensor3dXf DecoderWorker(Tensor3dXf mix);
     int valid_length(int length);
-    bool load_from_jit_module(torch::jit::script::Module module);
+    bool load_from_jit_module(const torch::jit::script::Module &module);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
-    float MaxAbsDifference(const DemucsModel &other);
-    bool IsEqual(const DemucsModel &other, float tolerance = 1e-5);
+    float MaxAbsDifference(const DemucsModel &other) const;
+    bool IsEqual(const DemucsModel &other, float tolerance = 1e-5)const;
     ~DemucsModel() {}
     std::vector<OneDecoder> decoders;
     std::vector<OneEncoder> encoders;
@@ -231,6 +229,5 @@ struct DemucsStreamer {
     int stride;
     int numThreads;
     std::vector<DemucsModel> demucs_models;
-    DemucsStreamer(int stride = 2048,
-                   int numThreads = 10);
+    DemucsStreamer(int stride = 4096, int numThreads = 10);
 };

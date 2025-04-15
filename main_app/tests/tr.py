@@ -245,7 +245,8 @@ class SimpleEncoderDecoderLSTM(nn.Module):
 
 
 if __name__ == "__main__":
-    AllTestsPath="/home/torfinhell/Denoiser.cpp/main_app/tests/test_data"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    AllTestsPath=f"{current_dir}/test_data"
     CreateTests(SimpleModel(), torch.randn(10),f"{AllTestsPath}/SimpleModel")
     CreateTests(OneEncoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/OneEncoder")
     CreateTests(SimpleEncoderDecoder(), torch.randn(2, 1, 8),f"{AllTestsPath}/SimpleEncoderDecoder")

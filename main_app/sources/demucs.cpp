@@ -76,28 +76,13 @@ int DemucsModel::valid_length(int length)
 
 Tensor3dXf DemucsModel::forward(Tensor3dXf mix)
 {
-    // auto start = std::chrono::high_resolution_clock::now();
     auto res1 = EncoderWorker(mix);
-    // auto end = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time taken for EncoderWorker: "
-    //           << std::chrono::duration<double>(end - start).count()
-    //           << " seconds" << std::endl;
-    // start = std::chrono::high_resolution_clock::now();
     auto res2 = LSTMWorker(res1);
-    // end = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time taken for LSTMWorker: "
-    //           << std::chrono::duration<double>(end - start).count()
-    //           << " seconds" << std::endl;
-    // start = std::chrono::high_resolution_clock::now();
     auto res3 = DecoderWorker(res2);
-    // end = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time taken for DecoderWorker: "
-    //           << std::chrono::duration<double>(end - start).count()
-    //           << " seconds" << std::endl;
-    return res3; //////////////////////////////////////
+    return res3;
 }
 
-bool DemucsModel::load_from_jit_module(torch::jit::script::Module module)
+bool DemucsModel::load_from_jit_module(const torch::jit::script::Module &module)
 {
     for (int i = 0; i < depth; i++) {
         if (!encoders[i].load_from_jit_module(module, std::to_string(i))) {
@@ -136,7 +121,7 @@ void DemucsModel::load_from_file(std::ifstream &inputstream)
     lstm2.load_from_file(inputstream);
 }
 
-float DemucsModel::MaxAbsDifference(const DemucsModel &other)
+float DemucsModel::MaxAbsDifference(const DemucsModel &other) const
 {
     float max = 0;
     for (int i = 0; i < depth; i++) {
@@ -148,7 +133,7 @@ float DemucsModel::MaxAbsDifference(const DemucsModel &other)
                             lstm2.MaxAbsDifference(lstm2)});
 }
 
-bool DemucsModel::IsEqual(const DemucsModel &other, float tolerance)
+bool DemucsModel::IsEqual(const DemucsModel &other, float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -177,4 +162,3 @@ DemucsModel::DemucsModel(int hidden, int ch_scale, int kernel_size, int stride,
     chin = chin_first;
     chout = chout_first;
 }
-
