@@ -53,8 +53,8 @@ float SimpleModel::MaxAbsDifference(const SimpleModel &other) const
     assert(fc_bias.size() == other.fc_bias.size() &&
            "Biases must be of the same size");
     float weight_diff =
-        ::MaxAbsDifference<Tensor2dXf>(other.fc_weights, fc_weights); 
-    float bias_diff = ::MaxAbsDifference<Tensor1dXf>(other.fc_bias, fc_bias); 
+        ::MaxAbsDifference<Tensor2dXf>(other.fc_weights, fc_weights);
+    float bias_diff = ::MaxAbsDifference<Tensor1dXf>(other.fc_bias, fc_bias);
     return std::max(weight_diff, bias_diff);
 }
 
@@ -103,13 +103,14 @@ void SimpleEncoderDecoder::load_from_file(std::ifstream &inputstream)
     one_decoder.load_from_file(inputstream);
 }
 
-float SimpleEncoderDecoder::MaxAbsDifference(const SimpleEncoderDecoder &other) const
+float SimpleEncoderDecoder::MaxAbsDifference(
+    const SimpleEncoderDecoder &other) const
 {
     return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
                             one_decoder.MaxAbsDifference(other.one_decoder)});
 }
 
-bool SimpleEncoderDecoder::IsEqual(const SimpleEncoderDecoder &other, 
+bool SimpleEncoderDecoder::IsEqual(const SimpleEncoderDecoder &other,
                                    float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
@@ -118,7 +119,7 @@ bool SimpleEncoderDecoder::IsEqual(const SimpleEncoderDecoder &other,
 Tensor3dXf SimpleEncoderDecoderLSTM::forward(Tensor3dXf tensor)
 {
     LstmState lstm_state1, lstm_state2;
-    
+
     auto res1 = one_encoder.forward(tensor);
     auto res2 = lstm1.forward(res1.shuffle(std::array<int64_t, 3>{2, 0, 1}),
                               hidden, lstm_state1);
@@ -162,8 +163,8 @@ void SimpleEncoderDecoderLSTM::load_from_file(std::ifstream &inputstream)
     one_decoder.load_from_file(inputstream);
 }
 
-float SimpleEncoderDecoderLSTM::MaxAbsDifference( 
-    const SimpleEncoderDecoderLSTM &other)const
+float SimpleEncoderDecoderLSTM::MaxAbsDifference(
+    const SimpleEncoderDecoderLSTM &other) const
 {
     return max_of_multiple({one_encoder.MaxAbsDifference(other.one_encoder),
                             one_decoder.MaxAbsDifference(other.one_decoder),
@@ -171,7 +172,7 @@ float SimpleEncoderDecoderLSTM::MaxAbsDifference(
                             lstm2.MaxAbsDifference(other.lstm2)});
 }
 
-bool SimpleEncoderDecoderLSTM::IsEqual(const SimpleEncoderDecoderLSTM &other, 
+bool SimpleEncoderDecoderLSTM::IsEqual(const SimpleEncoderDecoderLSTM &other,
                                        float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;

@@ -84,7 +84,7 @@ void OneEncoder::load_from_file(std::ifstream &inputstream)
     conv_2_1d.load_from_file(inputstream);
 }
 
-float OneEncoder::MaxAbsDifference(const OneEncoder &other) const 
+float OneEncoder::MaxAbsDifference(const OneEncoder &other) const
 {
     return max_of_multiple({conv_1_1d.MaxAbsDifference(other.conv_1_1d),
                             conv_2_1d.MaxAbsDifference(other.conv_2_1d)});
@@ -212,11 +212,11 @@ void Conv1D::load_from_file(std::ifstream &inputstream)
     ReadTensor<Tensor1dXf, 1>(conv_bias, inputstream, indices_dim_1);
 }
 
-float Conv1D::MaxAbsDifference(const Conv1D &other) const 
+float Conv1D::MaxAbsDifference(const Conv1D &other) const
 {
     return max_of_multiple(
-        {::MaxAbsDifference(conv_bias, other.conv_bias), 
-         ::MaxAbsDifference(conv_weights, other.conv_weights)}); 
+        {::MaxAbsDifference(conv_bias, other.conv_bias),
+         ::MaxAbsDifference(conv_weights, other.conv_weights)});
 }
 
 bool Conv1D::IsEqual(const Conv1D &other, float tolerance) const
@@ -306,7 +306,7 @@ void OneDecoder::load_from_file(std::ifstream &inputstream)
     conv_tr_1_1d.load_from_file(inputstream);
 }
 
-float OneDecoder::MaxAbsDifference(const OneDecoder &other) const 
+float OneDecoder::MaxAbsDifference(const OneDecoder &other) const
 {
     return max_of_multiple<float>(
         {conv_1_1d.MaxAbsDifference(other.conv_1_1d),
@@ -423,14 +423,15 @@ void ConvTranspose1d::load_from_file(std::ifstream &inputstream)
     ReadTensor<Tensor1dXf, 1>(conv_tr_bias, inputstream, indices_dim_1);
 }
 
-float ConvTranspose1d::MaxAbsDifference(const ConvTranspose1d &other) const 
+float ConvTranspose1d::MaxAbsDifference(const ConvTranspose1d &other) const
 {
     return max_of_multiple(
-        {::MaxAbsDifference(conv_tr_bias, other.conv_tr_bias), 
-         ::MaxAbsDifference(conv_tr_weights, other.conv_tr_weights)}); 
+        {::MaxAbsDifference(conv_tr_bias, other.conv_tr_bias),
+         ::MaxAbsDifference(conv_tr_weights, other.conv_tr_weights)});
 }
 
-bool ConvTranspose1d::IsEqual(const ConvTranspose1d &other, float tolerance) const
+bool ConvTranspose1d::IsEqual(const ConvTranspose1d &other,
+                              float tolerance) const
 {
     return MaxAbsDifference(other) <= tolerance;
 }
@@ -467,7 +468,7 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize,
     assert(lstm_bias_hh.dimension(0) == 4 * HiddenSize &&
            lstm_bias_hh.dimension(1) == 1);
     for (int t = 0; t < length; t++) {
-        Tensor2dXf x_t = tensor.chip(t, 0); 
+        Tensor2dXf x_t = tensor.chip(t, 0);
         Tensor2dXf combined_input =
             lstm_weight_ih.contract(x_t, product_dims_sec_transposed) +
             lstm_bias_ih.broadcast(std::array<long, 2>{1, batch_size});
@@ -559,13 +560,13 @@ void OneLSTM::load_from_file(std::ifstream &inputstream)
     ReadTensor<Tensor2dXf, 2>(lstm_bias_hh, inputstream, indices_dim_2);
 }
 
-float OneLSTM::MaxAbsDifference(const OneLSTM &other)  const
+float OneLSTM::MaxAbsDifference(const OneLSTM &other) const
 {
     return max_of_multiple<float>({
-        ::MaxAbsDifference(lstm_weight_ih, other.lstm_weight_ih),  
-        ::MaxAbsDifference(lstm_weight_hh, other.lstm_weight_hh),  
-        ::MaxAbsDifference(lstm_bias_ih, other.lstm_bias_ih),  
-        ::MaxAbsDifference(lstm_bias_hh, other.lstm_bias_hh),  
+        ::MaxAbsDifference(lstm_weight_ih, other.lstm_weight_ih),
+        ::MaxAbsDifference(lstm_weight_hh, other.lstm_weight_hh),
+        ::MaxAbsDifference(lstm_bias_ih, other.lstm_bias_ih),
+        ::MaxAbsDifference(lstm_bias_hh, other.lstm_bias_hh),
     });
 }
 

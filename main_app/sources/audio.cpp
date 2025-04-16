@@ -31,8 +31,7 @@ Tensor2dXf ReadAudioFromFile(fs::path file_name, int *sample_rate,
         *sample_rate = fileData->sampleRate;
     }
     if (fileData->channelCount != 1) {
-        throw std::invalid_argument(
-            "demucs_mt.cpp only supports mono  audio");
+        throw std::invalid_argument("demucs_mt.cpp only supports mono  audio");
     }
     int64_t N = fileData->samples.size() / fileData->channelCount;
     Tensor2dXf ret(1, N);
@@ -70,7 +69,6 @@ Tensor2dXf WriteAudioFromFile(fs::path file_name, Tensor2dXf wav,
     int encoderStatus =
         encode_wav_to_disk({fileData->channelCount, PCM_FLT, DITHER_TRIANGLE},
                            fileData.get(), file_name);
-    std::cout << "Encoder Status: " << encoderStatus << std::endl;
     return wav;
 }
 
@@ -127,9 +125,8 @@ Tensor1dXf compute_polyphase_filter_bank(int64_t upsampling_factor,
 
         int64_t polyphase_filter_index = i % num_filters;
         int64_t offset_in_polyphase_filter = i / num_filters;
-        int64_t filter_array_idx =
-            polyphase_filter_index * num_filter_taps +
-            offset_in_polyphase_filter;
+        int64_t filter_array_idx = polyphase_filter_index * num_filter_taps +
+                                   offset_in_polyphase_filter;
         filter[filter_array_idx] = f * window[i];
     }
     if (downsampling_factor > upsampling_factor) {

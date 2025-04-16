@@ -66,7 +66,7 @@ struct SimpleModel {
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const SimpleModel &other) const;
-    bool IsEqual(const SimpleModel &other, float tolerance = 1e-5)const;
+    bool IsEqual(const SimpleModel &other, float tolerance = 1e-5) const;
     ~SimpleModel() {}
 
     Tensor2dXf fc_weights;
@@ -81,7 +81,7 @@ struct Conv1D {
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const Conv1D &other) const;
-    bool IsEqual(const Conv1D &other, float tolerance = 1e-5)const;
+    bool IsEqual(const Conv1D &other, float tolerance = 1e-5) const;
     ~Conv1D() {}
     int GetSize(int size, int kernel_size, int stride);
     Tensor3dXf conv_weights;
@@ -95,7 +95,7 @@ struct ConvTranspose1d {
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const ConvTranspose1d &other) const;
-    bool IsEqual(const ConvTranspose1d &other, float tolerance = 1e-5)const;
+    bool IsEqual(const ConvTranspose1d &other, float tolerance = 1e-5) const;
     ~ConvTranspose1d() {}
     int GetTransposedSize(int size, int kernel_size, int stride);
     Tensor3dXf conv_tr_weights;
@@ -125,7 +125,6 @@ struct OneEncoder {
                int stride = 4, int chout = 1, int chin = 1);
 };
 
-
 struct OneDecoder {
     Tensor3dXf forward(Tensor3dXf tensor);
     bool load_from_jit_module(const torch::jit::script::Module &module,
@@ -133,7 +132,7 @@ struct OneDecoder {
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const OneDecoder &other) const;
-    bool IsEqual(const OneDecoder &other, float tolerance = 1e-5)const;
+    bool IsEqual(const OneDecoder &other, float tolerance = 1e-5) const;
     ~OneDecoder() {}
     Conv1D conv_1_1d;
     GLU glu;
@@ -148,13 +147,14 @@ struct LstmState {
     bool is_created = false;
 };
 struct OneLSTM {
-    Tensor3dXf forward(Tensor3dXf tensor, int HiddenSize, LstmState &lstm_state);
+    Tensor3dXf forward(Tensor3dXf tensor, int HiddenSize,
+                       LstmState &lstm_state);
     bool load_from_jit_module(const torch::jit::script::Module &module,
                               std::string weights_index);
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const OneLSTM &other) const;
-    bool IsEqual(const OneLSTM &other, float tolerance = 1e-5)const;
+    bool IsEqual(const OneLSTM &other, float tolerance = 1e-5) const;
     ~OneLSTM() {}
     Tensor2dXf lstm_weight_ih, lstm_weight_hh;
     Tensor2dXf lstm_bias_ih, lstm_bias_hh;
@@ -166,7 +166,8 @@ struct SimpleEncoderDecoder {
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const SimpleEncoderDecoder &other) const;
-    bool IsEqual(const SimpleEncoderDecoder &other, float tolerance = 1e-5)const;
+    bool IsEqual(const SimpleEncoderDecoder &other,
+                 float tolerance = 1e-5) const;
     ~SimpleEncoderDecoder() {}
     OneEncoder one_encoder;
     OneDecoder one_decoder;
@@ -180,7 +181,8 @@ struct SimpleEncoderDecoderLSTM {
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const SimpleEncoderDecoderLSTM &other) const;
-    bool IsEqual(const SimpleEncoderDecoderLSTM &other, float tolerance = 1e-5)const;
+    bool IsEqual(const SimpleEncoderDecoderLSTM &other,
+                 float tolerance = 1e-5) const;
     ~SimpleEncoderDecoderLSTM() {}
     OneEncoder one_encoder;
     OneDecoder one_decoder;
@@ -201,7 +203,7 @@ struct DemucsModel {
     void load_to_file(std::ofstream &outputstream);
     void load_from_file(std::ifstream &inputstream);
     float MaxAbsDifference(const DemucsModel &other) const;
-    bool IsEqual(const DemucsModel &other, float tolerance = 1e-5)const;
+    bool IsEqual(const DemucsModel &other, float tolerance = 1e-5) const;
     ~DemucsModel() {}
     std::vector<OneDecoder> decoders;
     std::vector<OneEncoder> encoders;

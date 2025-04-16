@@ -1,4 +1,3 @@
-
 #include <Eigen/Dense>
 #include <array>
 #include <iostream>
@@ -108,3 +107,5 @@ void TestStreamerForwardAudio();
 void GenerateTestsforAudio();
 
 void TestResampler();
+
+void TestMP3();

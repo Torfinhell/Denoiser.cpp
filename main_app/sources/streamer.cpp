@@ -43,16 +43,14 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
                                           : big_wav.dimension(2) - i};
         buffer_audio.push_back(big_wav.slice(offset, extent));
     }
-    int64_t buffer_audio_size=static_cast<int64_t>(buffer_audio.size());
+    int64_t buffer_audio_size = static_cast<int64_t>(buffer_audio.size());
     std::vector<Tensor3dXf> encoders_result(buffer_audio_size);
     std::vector<Tensor3dXf> lstm_result(buffer_audio_size);
     std::vector<Tensor3dXf> decoders_result(buffer_audio_size);
     for (int64_t start_thread = 0; start_thread < buffer_audio_size;
          start_thread += numThreads) {
         for (int64_t i = start_thread;
-             i < std::min(buffer_audio_size,
-                          start_thread + numThreads);
-             i++) {
+             i < std::min(buffer_audio_size, start_thread + numThreads); i++) {
             threads_encoders.emplace_back([&, i]() {
                 encoders_result[i] =
                     demucs_models[i % numThreads].EncoderWorker(
@@ -63,9 +61,7 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
             t.join();
         }
         for (int64_t i = start_thread;
-             i < std::min(buffer_audio_size,
-                          start_thread + numThreads);
-             i++) {
+             i < std::min(buffer_audio_size, start_thread + numThreads); i++) {
             lstm_result[i] =
                 demucs_models[i % numThreads].LSTMWorker(encoders_result[i]);
             demucs_models[(i + 1) % numThreads].lstm_state1 =
@@ -74,9 +70,7 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
                 demucs_models[i % numThreads].lstm_state2;
         }
         for (int64_t i = start_thread;
-             i < std::min(buffer_audio_size,
-                          start_thread + numThreads);
-             i++) {
+             i < std::min(buffer_audio_size, start_thread + numThreads); i++) {
             threads_decoders.emplace_back([&, i]() {
                 decoders_result[i] =
                     demucs_models[i % numThreads].DecoderWorker(lstm_result[i]);
