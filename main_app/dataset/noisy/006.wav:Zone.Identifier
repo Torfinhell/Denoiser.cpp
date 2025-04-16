@@ -1,4 +1,0 @@
-[ZoneTransfer]
-ZoneId=3
-ReferrerUrl=https://cloudconvert.com/
-HostUrl=https://eu-central.storage.cloudconvert.com/tasks/aea09929-c5f5-4a26-ace0-9000490de2f7/car_20dB.wav?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cloudconvert-production%2F20250412%2Ffra%2Fs3%2Faws4_request&X-Amz-Date=20250412T133446Z&X-Amz-Expires=86400&X-Amz-Signature=1e43c4908777bfe16fc965164fbd9ba8a7bd13c6121918fb535f46bb51fec079&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22car_20dB.wav%22&response-content-type=audio%2Fwav&x-id=GetObject

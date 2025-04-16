@@ -1,4 +1,0 @@
-[ZoneTransfer]
-ZoneId=3
-ReferrerUrl=https://cloudconvert.com/
-HostUrl=https://eu-central.storage.cloudconvert.com/tasks/b371ec86-3ad4-4d3b-9817-c9068ffb73ed/babble_20dB.wav?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cloudconvert-production%2F20250412%2Ffra%2Fs3%2Faws4_request&X-Amz-Date=20250412T133447Z&X-Amz-Expires=86400&X-Amz-Signature=543b70772cfc31d11aa3bafba4a98546f51e268217afa32b6d3f4bb49d77f5bf&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22babble_20dB.wav%22&response-content-type=audio%2Fwav&x-id=GetObject

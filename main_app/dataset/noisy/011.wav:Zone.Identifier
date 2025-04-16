@@ -1,4 +1,0 @@
-[ZoneTransfer]
-ZoneId=3
-ReferrerUrl=https://cloudconvert.com/
-HostUrl=https://eu-central.storage.cloudconvert.com/tasks/9fbb808b-38f8-4f2f-83d8-3c06011fd73e/street_5dB.wav?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=cloudconvert-production%2F20250412%2Ffra%2Fs3%2Faws4_request&X-Amz-Date=20250412T133425Z&X-Amz-Expires=86400&X-Amz-Signature=1d905ef780219222ed33a398b5466335a1a54e32b274346980712e3c5c9af30d&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22street_5dB.wav%22&response-content-type=audio%2Fwav&x-id=GetObject
