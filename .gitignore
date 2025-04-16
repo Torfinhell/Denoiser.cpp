@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+build
+.venv
+.cache
+__pycache__
+trash
+tests

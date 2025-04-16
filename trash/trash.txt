@@ -1,0 +1,1687 @@
+#include "layers.h"
+#include "Eigen/src/Core/util/Meta.h"
+#include "audio.h"
+#include "tensors.h"
+#include "unsupported/Eigen/CXX11/src/Tensor/TensorTraits.h"
+#include <Eigen/Core>
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <chrono>
+#include <cmath>
+#include <fstream>
+#include <iostream>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <unsupported/Eigen/CXX11/src/Tensor/TensorDeviceThreadPool.h>
+#include <vector>
+
+
+Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
+{
+    DemucsModel demucs_model;
+    fs::path base_path = "../tests/test_data/dns48";
+    std::ifstream input_file(base_path / "data.txt");
+    demucs_model.load_from_file(input_file);
+    const int resample_lookahead = 64;
+    const int stride = 4;
+    const int depth = 5;
+    const int resample = 4;
+    const int total_stride = (pow(stride, depth)) / resample;
+    const int num_frames = 1;
+    const int frame_length = demucs_model.valid_length(1);
+    const int total_length = frame_length + resample_lookahead;
+    const int numThreads = 6;
+    const int resample_buffer = 256;
+    std::vector<Tensor3dXf> buffer_audio =
+        SplitAudio(wav, total_length, total_stride);
+    std::vector<Tensor3dXf> return_audio(buffer_audio.size());
+    const int batch_size = 2;
+    LstmState lstm_state;
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // Variables to accumulate total time for each worker
+    std::vector<std::thread> threads_encoders;
+    std::vector<std::thread> threads_decoders;
+    std::vector<std::tuple<Tensor3dXf, std::vector<Tensor3dXf>, int, float>>
+        encoders_result(buffer_audio.size());
+    std::vector<Tensor3dXf> lstm_result(buffer_audio.size());
+    std::vector<Tensor3dXf> decoders_result(buffer_audio.size());
+    for (int start_thread = 0; start_thread < buffer_audio.size();
+         start_thread += numThreads) {
+        for (int i = start_thread;
+             i < std::min(static_cast<int>(buffer_audio.size()),
+                          start_thread + numThreads);
+             i++) {
+            threads_encoders.emplace_back([&, i]() {
+                encoders_result[i] =
+                    demucs_model.EncoderWorker(buffer_audio[i]);
+            });
+        }
+        for (auto &t : threads_encoders) {
+            t.join();
+        }
+        for (int i = start_thread;
+             i < std::min(static_cast<int>(buffer_audio.size()),
+                          start_thread + numThreads);
+             i++) {
+            lstm_result[i] = demucs_model.LSTMWorker(
+                std::get<0>(encoders_result[i]), lstm_state);
+        }
+        for (int i = start_thread;
+             i < std::min(static_cast<int>(buffer_audio.size()),
+                          start_thread + numThreads);
+             i++) {
+            threads_decoders.emplace_back([&, i]() {
+                decoders_result[i] = demucs_model.DecoderWorker(
+                    lstm_result[i], std::get<1>(encoders_result[i]),
+                    std::get<2>(encoders_result[i]),
+                    std::get<3>(encoders_result[i]));
+            });
+        }
+        for (auto &t : threads_decoders) {
+            t.join();
+        }
+        threads_decoders.clear();
+        threads_encoders.clear();
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << ", Time taken: " << duration.count() << "s" << std::endl;
+    Tensor2dXf ret_audio = CombineAudio(return_audio);
+    return ret_audio;
+}
+Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
+{
+    DemucsModel demucs_model;
+    fs::path base_path = "../tests/test_data/dns48";
+    std::ifstream input_file(base_path / "data.txt");
+    demucs_model.load_from_file(input_file);
+    const int resample_lookahead = 64;
+    const int stride = 4;
+    const int depth = 5;
+    const int total_stride = stride * depth;
+    const int num_frames = 1;
+    int frame_length =
+        demucs_model.valid_length(1) + total_stride * (num_frames - 1);
+    const int total_length = frame_length + resample_lookahead;
+    const int numThreads = 6;
+    const int resample_buffer = 256;
+    std::vector<Tensor3dXf> buffer_audio =
+        SplitAudio(wav, total_length, total_stride);
+    std::vector<Tensor3dXf> return_audio(buffer_audio.size());
+    const int batch_size = 2;
+    LstmState lstm_state;
+    std::vector<std::thread> threads_encoders;
+    std::vector<std::thread> threads_decoders;
+    std::vector<std::tuple<Tensor3dXf, std::vector<Tensor3dXf>, int, float>>
+        encoders_result(buffer_audio.size());
+    auto start = std::chrono::high_resolution_clock::now();
+    std::vector<Tensor3dXf> lstm_results(buffer_audio.size());
+    std::vector<std::tuple<Tensor3dXf, std::vector<Tensor3dXf>, int, float>>
+        encoder_results(buffer_audio.size());
+    std::vector<Tensor3dXf> decoder_results(buffer_audio.size());
+    std::mutex results_mutex;
+    // Make sure to use .eval() when passing tensors between threads to force
+    // evaluation
+    auto process_frame = [&](int i) {
+        // Force evaluation at each stage
+        Tensor3dXf input_frame = buffer_audio[i].eval();
+        
+        // Process with local copies
+        auto enc_result = demucs_model.EncoderWorker(input_frame);
+        auto enc_tensor = std::get<0>(enc_result).eval();
+        auto enc_skips = std::get<1>(enc_result);
+        
+        // Process LSTM with local state
+        LstmState local_lstm_state;
+        auto lstm_res = demucs_model.LSTMWorker(enc_tensor, local_lstm_state).eval();
+        
+        // Process decoder
+        auto dec_result = demucs_model.DecoderWorker(
+            lstm_res, 
+            enc_skips,
+            std::get<2>(enc_result),
+            std::get<3>(enc_result)
+        ).eval();
+        
+        // Store result
+        std::lock_guard<std::mutex> lock(results_mutex);
+        return_audio[i] = dec_result;
+    };
+    std::vector<std::thread> workers;
+    workers.reserve(numThreads);
+
+    for (size_t i = 0; i < buffer_audio.size();) {
+        // Launch up to numThreads workers
+        for (int t = 0; t < numThreads && i < buffer_audio.size(); ++t, ++i) {
+            workers.emplace_back(process_frame, i);
+        }
+
+        // Wait for current batch to finish
+        for (auto &w : workers) {
+            w.join();
+        }
+        workers.clear();
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    std::cout << ", Time taken: " << duration.count() << "s" << std::endl;
+    Tensor2dXf ret_audio = CombineAudio(return_audio);
+    return ret_audio;
+}
+// }
+    // else if (kernel_size == stride) {
+    //     Tensor4dXf newtensor = tensor.contract(
+    //         conv_tr_weights, Eigen::array<Eigen::IndexPair<int>, 1>{
+    //                              {Eigen::IndexPair<int>(1, 0)}});
+    //     Tensor4dXf other_tensor =
+    //         newtensor.shuffle(std::array<long long, 4>{0, 2, 1, 3});
+    //     Tensor3dXf output_tensor = other_tensor.reshape(
+    //         std::array<long, 3>{batch_size, OutputChannels, new_length});
+    //     output_tensor +=
+    //         conv_tr_bias.reshape(std::array<long, 3>{1, OutputChannels, 1})
+    //             .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
+    //     return output_tensor;
+    // }
+    // else {
+    //     Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    //     newtensor.setZero();
+
+    //     for (int channel = 0; channel < OutputChannels; channel++) {
+    //         for (int batch = 0; batch < batch_size; batch++) {
+    //             for (int pos = 0; pos < length; pos++) {
+    //                 for (int i = 0; i < kernel_size; i++) {
+    //                     int output_pos = pos * stride + i;
+    //                     if (output_pos < new_length) {
+    //                         for (int input_channel = 0;
+    //                              input_channel < InputChannels;
+    //                              input_channel++) {
+    //                             newtensor(batch, channel, output_pos) +=
+    //                                 tensor(batch, input_channel, pos) *
+    //                                 conv_tr_weights(input_channel, channel, i);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             for (int pos = 0; pos < new_length; pos++) {
+    //                 newtensor(batch, channel, pos) += conv_tr_bias(channel);
+    //             }
+    //         }
+    //     }
+    //     return newtensor;
+    // }
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+project(custom_ops)
+
+# Enable better optimization diagnostics
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Set Torch path
+set(Torch_DIR "/home/torfinhell/Denoiser.cpp/venv/lib/python3.12/site-packages/torch/share/cmake/Torch")
+
+# Find dependencies
+find_package(Torch REQUIRED)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+
+# Enhanced OpenMP setup
+find_package(OpenMP REQUIRED)  # Make OpenMP required
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+
+# Add executable
+file(GLOB SOURCES "main_app/*.cpp")
+add_executable(example-app ${SOURCES})
+
+# Modern target-based configuration
+target_compile_features(example-app PRIVATE cxx_std_17)
+
+# Include directories
+target_include_directories(example-app PRIVATE 
+    ${EIGEN3_INCLUDE_DIRS}
+    ${TORCH_INCLUDE_DIRS}
+)
+
+# Link libraries
+target_link_libraries(example-app PRIVATE
+    ${TORCH_LIBRARIES}
+    OpenMP::OpenMP_CXX
+    Eigen3::Eigen
+)
+
+# Aggressive optimization flags
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(example-app PRIVATE
+        -Ofast
+        -ffast-math
+        -march=native
+        -DNDEBUG
+        -fopenmp-simd  # Enable SIMD parallelization
+        -funroll-loops
+        -flto  # Link-time optimization
+    )
+    
+    target_link_options(example-app PRIVATE
+        -flto
+        -fuse-ld=gold  # Faster linker
+    )
+endif()
+
+# For Clang specifically
+# if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+#     target_compile_options(example-app PRIVATE
+#         -Rpass=.*
+#         -Rpass-missed=.*
+#         -Rpass-analysis=.*
+#     )
+# endif()
+
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+
+    // Padding the tensor
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+
+    assert(kernel_size > 0 && kernel_size <= padded_length);
+    assert(stride > 0 && stride <= padded_length);
+    if(stride==1 && kernel_size==1){
+        Tensor4dXf newtensor=tensor.contract(conv_weights, Eigen::array<Eigen::IndexPair<int>, 1>{{Eigen::IndexPair<int>(1, 1)}});
+        return newtensor.shuffle(std::array<long long,4>{3,0,2,1 }).chip(0,0);
+    }
+    Tensor4dXf big_tensor(1, tensor.dimension(0),tensor.dimension(1),tensor.dimension(2));
+    big_tensor.chip(0,0)=tensor;
+    Tensor4dXf big_tensor_shuffled=big_tensor.shuffle(std::array<long long, 4>{1,2,3,0});
+    big_tensor=big_tensor_shuffled;
+    Tensor5dXf extracted_images=big_tensor.extract_image_patches(InputChannels, kernel_size, InputChannels, stride,1,1,PaddingType::PADDING_VALID);
+    Tensor5dXf extracted_images_shuffle=extracted_images.shuffle(std::array<long long,5>{4,0,1,2,3});
+    Tensor4dXf get_patches=extracted_images_shuffle.chip(0,0);
+    Tensor3dXf output_tensor(OutputChannels, batch_size, new_length);
+    output_tensor=conv_weights.contract(get_patches, Eigen::array<Eigen::IndexPair<int>, 2>{{Eigen::IndexPair<int>(1, 1),Eigen::IndexPair<int>(2, 2)}});
+    // Tensor3dXf bias_tensor = conv_bias.reshape(std::array<long long,3>{OutputChannels,1,1}).broadcast(std::array<long long,3>{1, batch_size,new_length});
+    // output_tensor += bias_tensor;
+    // for(int channel=0;channel<OutputChannels;channel++){
+    //     for(int batch=0;batch<batch_size;batch++){
+    //         for(int pos=0;pos<new_length;pos++){
+    //             assert(conv_bias(channel)==bias_tensor(channel,batch,pos) && std::to_string(channel)+" "+std::to_string(batch)+" "+std::to_string(pos));
+    //         }
+    //     }
+    // }
+if(stride==1 && kernel_size==1){
+        for (int channel = 0; channel < OutputChannels; channel++) {
+            for (int batch = 0; batch < batch_size; batch++) {
+        for (int input_channel = 0; input_channel < InputChannels;
+            input_channel++) {
+                    float multiply_constant=conv_weights(channel,input_channel,0);
+                    float add_constant=conv_bias(channel);
+                    for(int i=0;i<length;i++){
+                        newtensor(batch, channel, i) =
+                            tensor(batch, input_channel, i) *
+                            multiply_constant+add_constant;
+                    }
+                }
+            }
+        }
+        return newtensor;
+    }
+if(stride==1 && kernel_size==1){
+        for (int channel = 0; channel < OutputChannels; channel++) {
+            for (int batch = 0; batch < batch_size; batch++) {
+        for (int input_channel = 0; input_channel < InputChannels;
+            input_channel++) {
+                    float multiply_constant=conv_weights(channel,input_channel,0);
+                    float add_constant=conv_bias(channel);
+                    newtensor.chip(batch,0).chip(channel,0)=
+                    tensor.chip(batch,0).chip(input_channel,0).unaryExpr([multiply_constant,add_constant](float x){return x*multiply_constant+add_constant;});
+                }
+            }
+        }
+        return newtensor;
+    }
+Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
+{
+    DemucsModel demucs_model;
+    fs::path base_path = "../tests/test_data/dns48";
+    std::ifstream input_file(base_path / "data.txt");
+    demucs_model.load_from_file(input_file);
+    const int resample_lookahead = 64;
+    const int stride = 4;
+    const int depth = 5;
+    const int total_stride = stride * depth;
+    const int num_frames = 1;
+    int frame_length =
+        demucs_model.valid_length(1) + total_stride * (num_frames - 1);
+    const int total_length = frame_length + resample_lookahead;
+    const int numThreads = 12;
+    const int resample_buffer = 256;
+    std::vector<Tensor3dXf> buffer_audio =
+        SplitAudio(wav, total_length, total_stride);
+    std::vector<Tensor3dXf> return_audio(buffer_audio.size());
+    const int batch_size = 2;
+    LstmState lstm_state;
+    std::vector<std::thread> threads_encoders;
+    std::vector<std::thread> threads_decoders;
+    std::vector<std::tuple<Tensor3dXf, std::vector<Tensor3dXf>, int, float>>
+        encoders_result(buffer_audio.size());
+    std::vector<Tensor3dXf> lstm_result(buffer_audio.size());
+    std::vector<Tensor3dXf> decoders_result(buffer_audio.size());
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // Total time for encoder processing
+    auto encoder_start = std::chrono::high_resolution_clock::now();
+
+    // Encoder processing
+    for (int start_thread = 0; start_thread < buffer_audio.size();
+         start_thread += numThreads) {
+        std::vector<std::thread> threads_encoders;
+        for (int i = start_thread;
+             i < std::min(static_cast<int>(buffer_audio.size()),
+                          start_thread + numThreads);
+             i++) {
+            threads_encoders.emplace_back([&, i]() {
+                encoders_result[i] =
+                    demucs_model.EncoderWorker(buffer_audio[i]);
+            });
+        }
+        for (auto &t : threads_encoders) {
+            t.join();
+        }
+        threads_encoders.clear();
+    }
+
+    auto encoder_end = std::chrono::high_resolution_clock::now();
+    auto encoder_duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(encoder_end -
+                                                              encoder_start)
+            .count();
+    std::cout << "Total Encoder Time: " << encoder_duration << " ms"
+              << std::endl;
+
+    // LSTM processing
+    auto lstm_start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < buffer_audio.size(); i++) {
+        lstm_result[i] = demucs_model.LSTMWorker(
+            std::get<0>(encoders_result[i]), lstm_state);
+    }
+    auto lstm_end = std::chrono::high_resolution_clock::now();
+    auto lstm_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             lstm_end - lstm_start)
+                             .count();
+    std::cout << "LSTM Time: " << lstm_duration << " ms" << std::endl;
+
+    // Decoder processing
+    auto decoder_start = std::chrono::high_resolution_clock::now();
+    for (int start_thread = 0; start_thread < buffer_audio.size();
+         start_thread += numThreads) {
+        std::vector<std::thread> threads_decoders;
+        for (int i = start_thread;
+             i < std::min(static_cast<int>(buffer_audio.size()),
+                          start_thread + numThreads);
+             i++) {
+            threads_decoders.emplace_back([&, i]() {
+                decoders_result[i] = demucs_model.DecoderWorker(
+                    lstm_result[i], std::get<1>(encoders_result[i]),
+                    std::get<2>(encoders_result[i]),
+                    std::get<3>(encoders_result[i]));
+            });
+        }
+        for (auto &t : threads_decoders) {
+            t.join();
+        }
+        threads_decoders.clear();
+    }
+
+    auto decoder_end = std::chrono::high_resolution_clock::now();
+    auto decoder_duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(decoder_end -
+                                                              decoder_start)
+            .count();
+    std::cout << "Total Decoder Time: " << decoder_duration << " ms"
+              << std::endl;
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto total_duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+            .count();
+    std::cout << "Total Time taken for the entire process: " << total_duration
+              << " ms" << std::endl;
+
+    // auto start = std::chrono::high_resolution_clock::now();
+
+    // // Process each audio buffer
+    // for (int i = 0; i < buffer_audio.size(); i++) {
+    //     std::cout<<i<<" "<<buffer_audio.size()<<std::endl;
+    //     return_audio[i] = demucs_model.forward(buffer_audio[i], lstm_state);
+    // }
+
+    // // End timing
+    // auto end = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end
+    // - start).count();
+
+    // // Output the time taken
+    // std::cout << "Time taken for forward pass: " << duration << " ms" <<
+    // std::endl; Print total time for each worker
+    Tensor2dXf ret_audio = CombineAudio(return_audio);
+    return ret_audio;
+}
+
+Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
+                                    int OutputChannels, int kernel_size,
+                                    int stride)
+{
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int new_length = GetTransposedSize(length, kernel_size, stride);
+    assert(conv_tr_weights.dimension(0) == InputChannels);
+    assert(conv_tr_weights.dimension(1) == OutputChannels);
+    assert(conv_tr_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+    assert(kernel_size > 0 && kernel_size <= new_length);
+    assert(stride > 0);
+    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    newtensor.setZero();
+    for (int channel = 0; channel < OutputChannels; channel++) {
+        for (int batch = 0; batch < batch_size; batch++) {
+            for (int pos = 0; pos < length; pos++) {
+                for (int i = 0; i < kernel_size; i++) {
+                    int output_pos = pos * stride + i;
+                    if (output_pos < new_length) {
+                        for (int input_channel = 0;
+                             input_channel < InputChannels; input_channel++) {
+                            newtensor(batch, channel, output_pos) +=
+                                tensor(batch, input_channel, pos) *
+                                conv_tr_weights(input_channel, channel, i);
+                        }
+                    }
+                }
+            }
+            for (int pos = 0; pos < new_length; pos++) {
+                newtensor(batch, channel, pos) += conv_tr_bias(channel);
+            }
+        }
+    }
+    return newtensor;
+}
+DemucsModel Model loaded successfully
+Padding and normalization completed in 2.0445e-05 seconds.
+UpSample Successfully worked out in 0.00136108 seconds.
+Encoders Successfully worked out in 0.0299452 seconds.
+LSTM Successfully worked out in 0.00472969 seconds.
+Time for conv_1_1d: 5.1228 ms
+Time for GLU: 0.019147 ms
+Time for conv_tr_1_1d: 3.32782 ms
+Time for conv_1_1d: 2.79031 ms
+Time for GLU: 0.021986 ms
+Time for conv_tr_1_1d: 4.03738 ms
+Time for conv_1_1d: 2.07149 ms
+Time for GLU: 0.035402 ms
+Time for conv_tr_1_1d: 4.46435 ms
+Time for conv_1_1d: 2.80603 ms
+Time for GLU: 0.246418 ms
+Time for conv_tr_1_1d: 4.22591 ms
+Time for conv_1_1d: 1.57318 ms
+Time for GLU: 0.320165 ms
+Time for conv_tr_1_1d: 0.216314 ms
+Decoder Successfully worked out in 0.0324519 seconds.
+DownSample Successfully worked out in 0.00116417 seconds.
+DemucsModel Model Test Successfully passed
+(venv) torfinhell@DESKTOP-GKFT548:~/Denoiser.cpp/build$ 
+
+
+
+
+DemucsModel Model loaded successfully
+Padding and normalization completed in 2.4471e-05 seconds.
+UpSample Successfully worked out in 0.00140013 seconds.
+Input tensor shape: [1, 1, 2388]
+Time for conv_1_1d: 533 microseconds
+Time for relu: 12 microseconds
+Input tensor shape in conv2: [1, 48, 596]
+Time for conv_2_1d: 1227 microseconds
+Time for glu: 279 microseconds
+Input tensor shape: [1, 48, 596]
+Time for conv_1_1d: 2279 microseconds
+Time for relu: 157 microseconds
+Input tensor shape in conv2: [1, 96, 148]
+Time for conv_2_1d: 1789 microseconds
+Time for glu: 51 microseconds
+Input tensor shape: [1, 96, 148]
+Time for conv_1_1d: 4192 microseconds
+Time for relu: 3 microseconds
+Input tensor shape in conv2: [1, 192, 36]
+Time for conv_2_1d: 1957 microseconds
+Time for glu: 27 microseconds
+Input tensor shape: [1, 192, 36]
+Time for conv_1_1d: 3662 microseconds
+Time for relu: 7 microseconds
+Input tensor shape in conv2: [1, 384, 8]
+Time for conv_2_1d: 2470 microseconds
+Time for glu: 18 microseconds
+Input tensor shape: [1, 384, 8]
+Time for conv_1_1d: 6367 microseconds
+Time for relu: 5 microseconds
+Input tensor shape in conv2: [1, 768, 1]
+Time for conv_2_1d: 5471 microseconds
+Time for glu: 17 microseconds
+Encoders Successfully worked out in 0.0312639 seconds.
+LSTM Successfully worked out in 0.008942 seconds.
+Decoder Successfully worked out in 0.0344318 seconds.
+DownSample Successfully worked out in 0.00117613 seconds.
+DemucsModel Model Test Successfully passed
+
+(venv) torfinhell@DESKTOP-GKFT548:~/Denoiser.cpp/build$ /home/torfinhell/Denoiser.cpp/build/example-app
+DemucsModel Model loaded successfully
+Padding and normalization completed in 1.0123e-05 seconds.
+UpSample Successfully worked out in 0.000907352 seconds.
+Encoders Successfully worked out in 0.0318975 seconds.
+LSTM Successfully worked out in 0.00682407 seconds.
+Decoder Successfully worked out in 0.0319207 seconds.
+DownSample Successfully worked out in 0.001027 seconds.
+DemucsModel Model Test Successfully passed
+(venv) torfinhell@DESKTOP-GKFT548:~/Denoiser.cpp/build$ /home/torfinhell/Denoiser.cpp/build/example-app
+DemucsModel Model loaded successfully
+Padding and normalization completed in 8.605e-06 seconds.
+UpSample Successfully worked out in 0.00097571 seconds.
+Encoders Successfully worked out in 0.0288179 seconds.
+LSTM Successfully worked out in 0.00391127 seconds.
+Decoder Successfully worked out in 0.0249907 seconds.
+DownSample Successfully worked out in 0.00133577 seconds.
+DemucsModel Model Test Successfully passed
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;
+
+    assert(kernel_size > 0 && kernel_size <= padded_length);
+    assert(stride > 0 && stride <= padded_length);
+
+    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    newtensor.setZero();
+
+    for (int pos = 0; pos + kernel_size <= padded_length; pos += stride) {
+        for (int i = 0; i < kernel_size; i++) {
+            for (int batch = 0; batch < batch_size; batch++) {
+                for (int channel = 0; channel < OutputChannels; channel++) {
+                    int counter = pos / stride;
+                    assert(counter < new_length);
+                    for (int input_channel = 0; input_channel < InputChannels;
+                         input_channel++) {
+                        newtensor(batch, channel, counter) +=
+                            tensor(batch, input_channel, pos + i) *
+                            conv_weights(channel, input_channel, i);
+                    }
+                    if (i == 0) {
+                        newtensor(batch, channel, counter) +=
+                            conv_bias(channel);
+                    }
+                }
+            }
+        }
+    }
+
+    return newtensor;
+}
+DemucsModel Model loaded successfully
+Padding and normalization completed in 0.00204068 seconds.
+UpSample Successfully worked out in 0.101415 seconds.
+Encoders Successfully worked out in 7.95263 seconds.
+LSTM Successfully worked out in 0.776533 seconds.
+Decoder Successfully worked out in 7.06814 seconds.
+DownSample Successfully worked out in 0.126072 seconds.
+DemucsModel Model Test Successfully passed
+(venv) torfinhell@DESKTOP-GKFT548:~/Denoiser.cpp/build
+
+ 
+DemucsModel Model loaded successfully
+Padding and normalization completed in 0.000125088 seconds.
+UpSample Successfully worked out in 0.000958459 seconds.
+Encoders Successfully worked out in 0.0604637 seconds.
+LSTM Successfully worked out in 0.00185798 seconds.
+Decoder Successfully worked out in 0.0517837 seconds.
+DownSample Successfully worked out in 0.00108893 seconds.
+DemucsModel Model Test Successfully passed
+git commit -m "Changed Cmake to optimize. Now it works process 0.015 sec in 0.11 sec"
+DemucsModel Model loaded successfully
+Padding and normalization completed in 0.0013372 seconds.
+UpSample Successfully worked out in 0.0276178 seconds.
+Encoders Successfully worked out in 90.7508 seconds.
+LSTM Successfully worked out in 0.964559 seconds.
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;
+    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    newtensor.setZero();
+    Eigen::FFT<float> fft;
+    int padded_kernel_size = length + kernel_size - 1;
+    padded_kernel_size =
+        1 << static_cast<int>((std::ceil(std::log2(padded_kernel_size))));
+    Eigen::VectorXf kernel_padded = Eigen::VectorXf::Zero(padded_kernel_size);
+
+    double total_input_fft_time = 0.0;
+    double total_kernel_fft_time = 0.0;
+    double total_inv_time = 0.0;
+
+    for (int input_channel = 0; input_channel < InputChannels;
+         input_channel++) {
+        for (int batch = 0; batch < batch_size; batch++) {
+            Eigen::VectorXf input_signal =
+                Eigen::VectorXf::Zero(padded_kernel_size);
+            for (int i = 0; i < padded_length; ++i) {
+                input_signal(i) = padded_tensor(batch, input_channel, i);
+            }
+
+            auto start_time = std::chrono::high_resolution_clock::now();
+            Eigen::VectorXcf input_fft;
+            fft.fwd(input_fft, input_signal);
+            auto end_time = std::chrono::high_resolution_clock::now();
+            total_input_fft_time +=
+                std::chrono::duration<double>(end_time - start_time).count();
+
+            for (int channel = 0; channel < OutputChannels; channel++) {
+                for (int i = 0; i < kernel_size; i++) {
+                    kernel_padded((padded_kernel_size - i) %
+                                  (padded_kernel_size)) =
+                        conv_weights(channel, input_channel, i);
+                }
+
+                start_time = std::chrono::high_resolution_clock::now();
+                Eigen::VectorXcf kernel_fft;
+                fft.fwd(kernel_fft, kernel_padded);
+                end_time = std::chrono::high_resolution_clock::now();
+                total_kernel_fft_time +=
+                    std::chrono::duration<double>(end_time - start_time)
+                        .count();
+
+                Eigen::VectorXcf product_fft =
+                    input_fft.cwiseProduct(kernel_fft);
+                Eigen::VectorXf convolved;
+
+                start_time = std::chrono::high_resolution_clock::now();
+                fft.inv(convolved, product_fft);
+                end_time = std::chrono::high_resolution_clock::now();
+                total_inv_time +=
+                    std::chrono::duration<double>(end_time - start_time)
+                        .count();
+
+                for (int i = 0; i < new_length; ++i) {
+                    newtensor(batch, channel, i) += convolved(i * stride);
+                }
+
+                if (input_channel == 0) {
+                    int counter = 0;
+                    for (int pos = 0; pos + kernel_size <= padded_length;
+                         pos += stride, counter++) {
+                        assert(counter < new_length);
+                        newtensor(batch, channel, counter) +=
+                            conv_bias(channel);
+                    }
+                    assert(counter == new_length);
+                }
+            }
+        }
+    }
+
+    std::cout << "Total time for input FFT fwd method: " << total_input_fft_time
+              << " seconds" << std::endl;
+    std::cout << "Total time for kernel FFT fwd method: "
+              << total_kernel_fft_time << " seconds" << std::endl;
+    std::cout << "Total time for inv method: " << total_inv_time << " seconds"
+              << std::endl;
+
+    return newtensor;
+}
+DemucsModel Model loaded successfully
+Padding and normalization completed in 0.0325363 seconds.
+Total time for input FFT fwd method: 0.0385634 seconds
+Total time for kernel FFT fwd method: 0.0326947 seconds
+Total time for inv method: 0.0332848 seconds
+Total time for input FFT fwd method: 0.0698162 seconds
+Total time for kernel FFT fwd method: 0.0705696 seconds
+Total time for inv method: 0.0660323 seconds
+UpSample Successfully worked out in 0.437442 seconds.
+Total time for input FFT fwd method: 0.151009 seconds
+Total time for kernel FFT fwd method: 6.38498 seconds
+Total time for inv method: 6.07284 seconds
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;
+    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    newtensor.setZero();
+    Eigen::FFT<float> fft;
+    int padded_kernel_size = length + kernel_size - 1;
+    padded_kernel_size =
+        1 << static_cast<int>((std::ceil(std::log2(padded_kernel_size))));
+    Eigen::VectorXf kernel_padded = Eigen::VectorXf::Zero(padded_kernel_size);
+    for (int input_channel = 0; input_channel < InputChannels;
+         input_channel++) {
+        for (int batch = 0; batch < batch_size; batch++) {
+            Eigen::VectorXf input_signal =
+                Eigen::VectorXf::Zero(padded_kernel_size);
+            for (int i = 0; i < padded_length; ++i) {
+                input_signal(i) = padded_tensor(batch, input_channel, i);
+            }
+            Eigen::VectorXcf input_fft;
+            fft.fwd(input_fft, input_signal);
+            for (int channel = 0; channel < OutputChannels; channel++) {
+                for (int i = 0; i < kernel_size; i++) {
+                    kernel_padded((padded_kernel_size - i) %
+                                  (padded_kernel_size)) =
+                        conv_weights(channel, input_channel, i);
+                }
+                Eigen::VectorXcf kernel_fft;
+                fft.fwd(kernel_fft, kernel_padded);
+                Eigen::VectorXcf product_fft =
+                    input_fft.cwiseProduct(kernel_fft);
+                Eigen::VectorXf convolved;
+                fft.inv(convolved, product_fft);
+                for (int i = 0; i < new_length; ++i) {
+                    newtensor(batch, channel, i) += convolved(i * stride);
+                }
+                if (input_channel == 0) {
+                    int counter = 0;
+                    for (int pos = 0; pos + kernel_size <= padded_length;
+                         pos += stride, counter++) {
+                        assert(counter < new_length);
+                        newtensor(batch, channel, counter) +=
+                            conv_bias(channel);
+                    }
+                    assert(counter == new_length);
+                }
+            }
+        }
+    }
+    return newtensor;
+}
+
+
+
+
+
+
+
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+
+    // Apply padding
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0); // No padding on batch dimension
+    paddings[1] =
+        std::make_pair(0, 0); // No padding on input channels dimension
+    paddings[2] =
+        std::make_pair(padding, padding); // Padding on length dimension
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+
+    // Output length after convolution
+    int new_length = (padded_length - kernel_size) / stride + 1;
+
+    // Initialize output tensor
+    Tensor3dXf newtensor(batch_size, OutputChannels, new_length);
+    newtensor.setZero();
+
+    // FFT object
+    Eigen::FFT<float> fft;
+
+    // Iterate over each batch and output channel
+    for (int batch = 0; batch < batch_size; ++batch) {
+        for (int out_channel = 0; out_channel < OutputChannels; ++out_channel) {
+            std::cout<<batch<<" "<<batch_size<<" "<<out_channel<<" "<<OutputChannels<<std::endl;
+            // Initialize the result for this batch and output channel
+            Eigen::VectorXf result = Eigen::VectorXf::Zero(new_length);
+
+            // Iterate over each input channel
+            for (int in_channel = 0; in_channel < InputChannels; ++in_channel) {
+                // Extract the input signal (1D) for this batch and input
+                // channel
+                Eigen::VectorXf input_signal(padded_length);
+                for (int i = 0; i < padded_length; ++i) { 
+                    input_signal(i) = padded_tensor(batch, in_channel, i);
+                }
+
+                // Extract the kernel (1D) for this output and input channel
+                Eigen::VectorXf kernel(kernel_size);
+                for (int i = 0; i < kernel_size; ++i) {
+                    kernel(i) = conv_weights(out_channel, in_channel, i);
+                }
+
+                // Pad the kernel to match the input signal length
+                Eigen::VectorXf kernel_padded =
+                    Eigen::VectorXf::Zero(padded_length);
+                kernel_padded.head(kernel_size) = kernel;
+
+                // Compute FFT of the input signal and kernel
+                Eigen::VectorXcf input_fft;
+                fft.fwd(input_fft, input_signal);
+
+                Eigen::VectorXcf kernel_fft;
+                fft.fwd(kernel_fft, kernel_padded);
+
+                // Perform pointwise multiplication in the frequency domain
+                Eigen::VectorXcf product_fft =
+                    input_fft.cwiseProduct(kernel_fft);
+
+                // Compute inverse FFT to get the convolved result
+                Eigen::VectorXf convolved;
+                fft.inv(convolved, product_fft);
+
+                // Accumulate the result (only the valid part of the
+                // convolution)
+                for (int i = 0; i < new_length; ++i) {
+                    result(i) += convolved(i * stride);
+                }
+            }
+
+            // Add bias and store the result in the output tensor
+            for (int i = 0; i < new_length; ++i) {
+                newtensor(batch, out_channel, i) =
+                    result(i) + conv_bias(out_channel);
+            }
+        }
+    }
+
+    return newtensor;
+}
+
+//current
+Encoder Model loaded successfully
+Input tensor shape: [2, 1, 10000]
+Time for conv_1_1d: 74567 microseconds
+Time for relu: 4495 microseconds
+Time for conv_2_1d: 271671 microseconds
+Time for glu: 5107 microseconds
+Input tensor shape: [2, 1, 10000]
+Time for conv_1_1d: 72148 microseconds
+Time for relu: 3702 microseconds
+Time for conv_2_1d: 281680 microseconds
+Time for glu: 4590 microseconds
+
+Encoder Model loaded successfully
+Input tensor shape: [2, 1, 10000]
+[1, 2, 1, 10000]
+[2, 1, 10000, 1]
+[2, 1, 8, 2499]
+Time for conv_1_1d: 156670 microseconds
+
+//before
+Encoder Model loaded successfully
+Input tensor shape: [2, 1, 10000]
+Time for conv_1_1d: 335781 microseconds
+Time for relu: 8147 microseconds
+Time for conv_2_1d: 3769006 microseconds
+Time for glu: 13199 microseconds
+OneEncoder Model Test Successfully passed
+
+
+
+
+Encoder Model loaded successfully
+Input tensor shape: [2, 1, 10000]
+Time for conv_1_1d: 4985 microseconds
+Time for relu: 657 microseconds
+example-app: /home/torfinhell/Denoiser.cpp/main_app/layers.cpp:255: Eigen::Tensor3dXf Conv1D::forward(Eigen::Tensor3dXf, int, int, int, int, int): Assertion `tensor.dimension(1) == InputChannels' failed.
+Aborted (core dumped)
+
+
+
+
+
+Encoder Model loaded successfully
+Input tensor shape: [2, 1, 10000]
+Time for conv_1_1d: 3821 microseconds
+Time for relu: 562 microseconds
+
+
+
+Input tensor shape: [2, 1, 10000]
+2 1 2499 4 [1, 1, 8, 19986]
+Time for conv_1_1d: 14247 microseconds
+Time for relu: 614 microseconds
+
+
+Encoder Model loaded successfully
+Input tensor shape: [2, 1, 10000]
+[1, 2, 1, 10000]
+[2, 1, 10000, 1]
+[2, 1, 8, 2500, 1]
+Time for conv_1_1d: 5247 microseconds
+
+
+
+
+
+
+
+
+
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;//ColMajor
+
+    assert(kernel_size > 0 && kernel_size <= padded_length);
+    assert(stride > 0 && stride <= padded_length);
+    Tensor4dXf big_tensor(1, tensor.dimension(0),tensor.dimension(1),tensor.dimension(2));
+    big_tensor.chip(0,0)=tensor;
+    std::cout<<big_tensor.dimensions()<<std::endl;
+    Tensor4dXf big_tensor_shuffled=big_tensor.shuffle(std::array<long long, 4>{1,2,3,0});
+    big_tensor=big_tensor_shuffled;
+    std::cout<<big_tensor.dimensions()<<std::endl;
+    Tensor5dXf extracted_images=big_tensor.extract_image_patches(1, kernel_size, 1, stride,1,1,PaddingType::PADDING_VALID);
+    Tensor5dXf extracted_images_shuffle=extracted_images.shuffle(std::array<long long,5>{4,0,1,2,3});
+    Tensor4dXf get_patches=extracted_images_shuffle.chip(0,0);
+    std::cout<<get_patches.dimensions()<<std::endl;
+    
+    Tensor3dXf output_tensor(batch_size, OutputChannels, new_length);
+    for(int batch=0;batch<batch_size;batch++){
+        Tensor2dXf output_tensor_2d(OutputChannels,new_length);
+        for(int output_channel=0;output_channel<OutputChannels;output_channel++){
+            for(int input_channel=0;input_channel<InputChannels;input_channel++){
+                Tensor2dXf slice(new_length,kernel_size);
+                Tensor2dXf kernel(1,kernel_size);
+                // for(int i=0;i<kernel_size;i++){
+                //     kernel(0,i)=conv_weights(output_channel,input_channel,i);
+                //     for(int j=0;j<new_length;j++){
+                //         slice(j,i)=get_patches(batch,input_channel,i,j);
+                //     }
+                // }
+                Tensor2dXf multiplied=kernel.contract(slice, product_dims_sec_transposed);
+                output_tensor_2d.chip(output_channel,0)=multiplied.reshape(std::array<long long,1>{multiplied.size()});
+                output_tensor_2d.chip(output_channel,0)+=output_tensor_2d.chip(output_channel,0).setConstant(conv_bias(output_channel));
+            }
+        }
+        output_tensor.chip(batch,0)=output_tensor_2d;
+    }
+    return output_tensor;
+}
+
+
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;
+
+    assert(kernel_size > 0 && kernel_size <= padded_length);
+    assert(stride > 0 && stride <= padded_length);
+
+    // Tensor4dXf newtensor(batch_size, InputChannels, new_length, stride);
+    // for(int batch=0;batch<batch_size;batch++){
+    //     for(int input_channel=0;input_channel<InputChannels;input_channel++){
+    //         for(int pos = 0; pos + kernel_size <= padded_length;
+    //             pos += stride){
+    //             for(int i=0;i<stride;i++){
+    //                 newtensor(batch,input_channel,pos/stride,i)=tensor(batch,
+    //                 input_channel, pos + i);
+    //             }
+    //         }
+    //     }
+    // }
+    Eigen::Tensor<float, 4> patch;
+    Eigen::array<ptrdiff_t, 3> patch_dims={1,1,kernel_size};
+    patch = tensor.extract_patches(patch_dims);
+    Tenstrided_patch=
+    /// 0 0 1 4 5
+    /// 1 1 2 5 6
+    /// 2 2 3 6 7
+    /// 3 4 5 8 9
+    /// 4 5 6 9 10
+    /// 5 6 7 10 11
+    
+    // Tensor3dXf output_tensor(batch_size, OutputChannels, new_length);
+    // for(int batch=0;batch<batch_size;batch++){
+    //     for(int
+    //     output_channel=0;output_channel<OutputChannels;output_channel++){
+    //         for(int
+    //         input_channel=0;input_channel<InputChannels;input_channel++){
+    //             output_tensor(batch,
+    //             input_channel)=newtensor.chip(output_channel,0).chip().contract(conv_weights(output_channel,
+    //             input_channel), product_dims_sec_transposed);
+    //         }
+    //     }
+    // }
+
+    return tensor;
+}
+Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
+                           int OutputChannels, int kernel_size, int stride,
+                           int padding)
+{
+    assert(conv_weights.dimension(0) == OutputChannels);
+    assert(conv_weights.dimension(1) == InputChannels);
+    assert(conv_weights.dimension(2) == kernel_size);
+    assert(tensor.dimension(1) == InputChannels);
+
+    int batch_size = tensor.dimension(0);
+    int length = tensor.dimension(2);
+    int padded_length = length + 2 * padding;
+    int new_length = GetSize(padded_length, kernel_size, stride);
+    Eigen::array<std::pair<int, int>, 3> paddings;
+    paddings[0] = std::make_pair(0, 0);
+    paddings[1] = std::make_pair(0, 0);
+    paddings[2] = std::make_pair(padding, padding);
+
+    Tensor3dXf padded_tensor = tensor.pad(paddings);
+    tensor = padded_tensor;
+
+    assert(kernel_size > 0 && kernel_size <= padded_length);
+    assert(stride > 0 && stride <= padded_length);
+
+    // Tensor3dXf newtensor(batch_size, OutputChannels, length-kernel_size+1);
+    // Eigen::array<ptrdiff_t, 1> dims({2});
+    // newtensor = tensor.convolve(conv_weights, dims);
+    Index patch_rows = 1; 
+    Index patch_cols = kernel_size;
+    Index row_stride = 1;
+    Index col_stride = stride;
+    Index in_row_stride = 1;
+    Index in_col_stride = 1;
+    // std::array<int, 4>pre_contract_dims;
+    // pre_contract_dims[1] = InputChannels * batch_size * kernelCols;
+    // pre_contract_dims[0] = out_height * out_width;
+    // for (int i = 0; i < NumDims - 3; ++i) {
+    //   pre_contract_dims[0] *= in.dimension(i);
+    // }
+    Tensor<float, 3> newtensor(batch_size, InputChannels, length);
+    // newtensor =tensor.reshape(std::array<long,4>{batch_size, InputChannels, length,1});
+    // Tensor<float, 4, Eigen::ColMajor>new_tensor_copy;
+    // new_tensor_copy=newtensor;
+    // Tensor<float,5> res1 =new_tensor_copy.extract_image_patches(patch_rows, patch_cols, row_stride, col_stride, in_row_stride, in_col_stride);
+    // std::cout<<res1.dimensions()<<std::endl;
+    // Tensor4dXf res1=newtensor.reshape({newtensor.dimension(0)})
+    // newtensor.setZero();
+    // for (int batch = 0; batch < batch_size; batch++) {
+    //     for (int channel = 0; channel < OutputChannels; channel++) {
+    //         for (int input_channel = 0; input_channel < InputChannels; input_channel++) {
+    //             for (int pos = 0; pos + kernel_size <= padded_length; pos += stride) {
+    //                 for (int i = 0; i < kernel_size; i++) {
+    //                     newtensor(batch, channel, pos/stride) +=
+    //                         tensor(batch, input_channel, pos + i) *
+    //                         conv_weights(channel, input_channel, i);
+    //                 }
+    //             }
+    //         }
+    //         for (int pos = 0; pos + kernel_size <= padded_length; pos += stride) {
+    //             newtensor(batch, channel, pos/stride) += conv_bias(channel);
+    //         }
+    //     }
+    // }
+    return tensor;
+}
+
+
+Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize, bool bi) {
+    int length = tensor.dimension(0);
+    int batch_size = tensor.dimension(1);
+    int input_size = tensor.dimension(2);
+    assert(length > 0 && batch_size > 0 && input_size > 0 && "Input tensor dimensions must be positive.");
+
+    Tensor3dXf output(length, batch_size, HiddenSize); 
+    Tensor2dXf h_t(batch_size, HiddenSize); // Hidden State
+    Tensor2dXf c_t(batch_size, HiddenSize); // Cell State
+    Tensor2dXf h_t_increased(batch_size, HiddenSize + input_size);
+    h_t.setZero();
+    c_t.setZero();
+    h_t_increased.setZero();
+
+    assert(lstm_weight_ih.dimension(0) == 4 * input_size && lstm_weight_ih.dimension(1) == HiddenSize);
+    assert(lstm_weight_hh.dimension(0) == 4 * HiddenSize && lstm_weight_hh.dimension(1) == HiddenSize);
+    assert(lstm_bias_ih.dimension(0) == 4 * input_size && lstm_bias_ih.dimension(1) == 1);
+    assert(lstm_bias_hh.dimension(0) == 4 * HiddenSize && lstm_bias_hh.dimension(1) == 1);
+
+    std::array<long, 2> extent_weight{static_cast<long>(input_size), static_cast<long>(HiddenSize)};
+    std::array<long, 2> offset_weight{0, 0};
+
+    auto GetMatrices = [HiddenSize](Tensor2dXf weight_matrix, long offset1, long offset2)
+    -> std::tuple<Tensor2dXf, Tensor2dXf, Tensor2dXf, Tensor2dXf> {
+        std::array<long, 2> extent{static_cast<long>(offset1), static_cast<long>(offset2)};
+        std::array<long, 2> offset{0, 0};
+        Tensor2dXf f(offset1, offset2);
+        f = weight_matrix.slice(offset, extent);
+        offset[0] += offset1;
+        Tensor2dXf i(offset1, offset2);
+        i = weight_matrix.slice(offset, extent);
+        offset[0] += offset1;
+        Tensor2dXf c(offset1, offset2);
+        c = weight_matrix.slice(offset, extent);
+        offset[0] += offset1;
+        Tensor2dXf o(offset1, offset2);
+        o = weight_matrix.slice(offset, extent);
+        return std::make_tuple(f, i, c, o);
+    };
+
+    auto ExtendColumn = [](Tensor2dXf column_weight, long columns_count)
+    -> Tensor2dXf {
+        assert(column_weight.dimension(1)==1);
+        Tensor2dXf new_column_weight(column_weight.dimension(0), columns_count);
+        for (long col = 0; col < columns_count; col++) {
+            new_column_weight.chip(col, 1) = column_weight.chip(0, 1);
+        }
+        return new_column_weight;
+    };
+
+    auto [W_f_input, W_i_input, W_c_input, W_o_input] = GetMatrices(lstm_weight_ih, input_size, HiddenSize);
+    auto [W_f_hidden, W_i_hidden, W_c_hidden, W_o_hidden] = GetMatrices(lstm_weight_hh, HiddenSize, HiddenSize);
+    auto [b_f_input, b_i_input, b_c_input, b_o_input] = GetMatrices(lstm_bias_ih, input_size, 1);
+    auto [b_f_hidden, b_i_hidden, b_c_hidden, b_o_hidden] = GetMatrices(lstm_bias_hh, HiddenSize, 1);
+
+    Tensor2dXf f_t(HiddenSize, 1), i_t(HiddenSize, 1), o_t(HiddenSize, 1);
+    f_t.setZero();
+    i_t.setZero();
+    o_t.setZero();
+
+    auto tanh_func = [](float x) { return std::tanh(x); };
+    auto sigmoid_func = [](float x) { return 1 / (1 + std::exp(-x)); };
+    std::cout<<b_f_input.dimensions()<<std::endl;
+    for (int t = 0; t < length; t++) {
+        Tensor<float, 2> x_t = tensor.chip(t, 0);
+        std::cout<<ExtendColumn(b_f_input, HiddenSize).dimensions()<<" "<<h_t.dimensions()<<" "<<ExtendColumn(b_f_input, HiddenSize).dimensions()<<std::endl;
+        assert(W_f_input.dimension(1)==x_t.dimension(1) && W_f_hidden.dimension(1)==h_t.dimension(1));
+        f_t = (x_t.contract(W_f_input, product_dims_sec_transposed) + 
+                h_t.contract(W_f_hidden, product_dims_sec_transposed) + 
+                ExtendColumn(b_f_input, HiddenSize)).unaryExpr(sigmoid_func);
+        std::cout<<"AAAAA"<<std::endl;
+        assert(f_t.dimension(0) == HiddenSize && f_t.dimension(1) == 1);
+        assert(W_i_input.dimension(1)==x_t.dimension(1) && W_i_hidden.dimension(1)==h_t.dimension(1));
+        i_t = (W_i_input.contract(x_t, product_dims_sec_transposed) + 
+                W_i_hidden.contract(h_t, product_dims_sec_transposed) + 
+                ExtendColumn(b_i_input, HiddenSize)).unaryExpr(sigmoid_func);
+        assert(i_t.dimension(0) == HiddenSize && i_t.dimension(1) == 1);
+        assert(W_c_input.dimension(1)==x_t.dimension(1) && W_c_hidden.dimension(1)==h_t.dimension(1));
+        c_t = f_t * c_t + i_t * ((W_c_input.contract(x_t, product_dims_sec_transposed) + 
+                                   W_c_hidden.contract(h_t, product_dims_sec_transposed) + 
+                                   ExtendColumn(b_c_input, HiddenSize))).unaryExpr(tanh_func);
+        assert(c_t.dimension(0) == batch_size && c_t.dimension(1) == HiddenSize);
+        assert(W_o_input.dimension(1)==x_t.dimension(1) && W_o_hidden.dimension(1)==h_t.dimension(1));
+        o_t = (W_o_input.contract(x_t, product_dims_sec_transposed) + 
+                W_o_hidden.contract(h_t, product_dims_sec_transposed) + 
+                ExtendColumn(b_o_input, HiddenSize)).unaryExpr(sigmoid_func);
+        assert(o_t.dimension(0) == HiddenSize && o_t.dimension(1) == 1);
+        h_t = o_t * c_t.unaryExpr(tanh_func);
+        assert(h_t.dimension(0) == batch_size && h_t.dimension(1) == HiddenSize);
+        output.chip(t, 0) = h_t;
+    }
+
+    return output; 
+}
+
+
+
+Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize, bool bi) {
+    int length = tensor.dimension(0);
+    int batch_size = tensor.dimension(1);
+    int input_size = tensor.dimension(2);
+    assert(length > 0 && batch_size > 0 && input_size > 0 && "Input tensor dimensions must be positive.");
+
+    Tensor3dXf output(length, batch_size, HiddenSize); 
+    Tensor2dXf h_t(batch_size, HiddenSize); // Hidden State
+    Tensor2dXf c_t(batch_size, HiddenSize); // Cell State
+    Tensor2dXf h_t_increased(batch_size, HiddenSize + input_size);
+    h_t.setZero();
+    c_t.setZero();
+    h_t_increased.setZero();
+
+    assert(lstm_weight_ih.dimension(0)==4*input_size && lstm_weight_ih.dimension(1)==HiddenSize);
+    assert(lstm_weight_hh.dimension(0)==4*HiddenSize && lstm_weight_hh.dimension(1)==HiddenSize);
+    assert(lstm_bias_ih.dimension(0)==4*input_size && lstm_bias_ih.dimension(1)==1);
+    assert(lstm_bias_hh.dimension(0)==4*HiddenSize && lstm_bias_hh.dimension(1)==1);
+    std::array<long, 2> extent_weight{static_cast<long>(input_size), static_cast<long>(HiddenSize)};
+    std::array<long, 2> offset_weight{0, 0};
+    auto GetMatrices=[HiddenSize](Tensor2dXf weight_matrix,long offset1,long offset2)
+    ->std::tuple<Tensor2dXf,Tensor2dXf,Tensor2dXf,Tensor2dXf>
+    {
+        std::array<long,2>extent{static_cast<long>(offset1),static_cast<long>(offset2)};
+        std::array<long,2>offset{0,0};
+        Tensor2dXf f(offset1, offset2);
+        f=weight_matrix.slice(offset,extent);
+        offset[0]+=offset1;
+        Tensor2dXf i(offset1, offset2);
+        i=weight_matrix.slice(offset,extent);
+        offset[0]+=offset1;
+        Tensor2dXf c(offset1, offset2);
+        c=weight_matrix.slice(offset,extent);
+        offset[0]+=offset1;
+        Tensor2dXf o(offset1, offset2);
+        o=weight_matrix.slice(offset,extent);
+        return std::make_tuple(f,i,c,o);
+    };
+    auto ExtendColumn=[](Tensor2dXf column_weight,long columns_count)
+    ->Tensor2dXf
+    {
+        Tensor2dXf new_column_weight(column_weight.dimension(0),columns_count);
+        for (long col=0;col<columns_count;col++){
+            new_column_weight.chip(col,0)=column_weight.chip(0,0);
+        }
+        return new_column_weight;
+    };
+
+    auto [W_f_input,W_i_input,W_c_input,W_o_input]=GetMatrices(lstm_weight_ih,input_size,HiddenSize);
+    auto [W_f_hidden,W_i_hidden,W_c_hidden,W_o_hidden]=GetMatrices(lstm_weight_hh,HiddenSize,HiddenSize);
+    auto [b_f_input,b_i_input,b_c_input,b_o_input]=GetMatrices(lstm_bias_ih,input_size,1);
+    auto [b_f_hidden,b_i_hidden,b_c_hidden,b_o_hidden]=GetMatrices(lstm_bias_hh,HiddenSize,1);
+
+
+    Tensor2dXf f_t(HiddenSize, HiddenSize + input_size), i_t(HiddenSize, HiddenSize + input_size), o_t(HiddenSize, HiddenSize + input_size);
+    f_t.setZero();
+    i_t.setZero();
+    o_t.setZero();
+    auto tanh_func = [](float x) { return std::tanh(x); };
+    auto sigmoid_func = [](float x) { return 1 / (1 + std::exp(-x)); };
+    for (int t = 0; t < length; t++) {
+        Tensor<float, 2> x_t = tensor.chip(t, 0);
+        f_t = (W_f_input.contract(x_t, product_dims_reg)+W_f_hidden.contract(h_t, product_dims_sec_transposed) + ExtendColumn(b_f_input, HiddenSize)).unaryExpr(sigmoid_func);
+        i_t  = (W_i_input.contract(x_t, product_dims_reg)+W_i_hidden.contract(h_t, product_dims_sec_transposed) + ExtendColumn(b_i_input, HiddenSize)).unaryExpr(sigmoid_func);
+        c_t = f_t * c_t + i_t * ((W_c_input.contract(x_t, product_dims_reg)+W_c_hidden.contract(h_t, product_dims_sec_transposed) + ExtendColumn(b_c_input, HiddenSize))).unaryExpr(tanh_func);
+        o_t = (W_o_input.contract(x_t, product_dims_reg)+W_o_hidden.contract(h_t, product_dims_sec_transposed) + ExtendColumn(b_o_input, HiddenSize)).unaryExpr(sigmoid_func);
+        h_t = o_t * c_t.unaryExpr(tanh_func);
+        output.chip(t, 0) = h_t; 
+      }
+      return output; 
+  }
+
+
+
+
+
+
+
+void setSubmatrix(Tensor<float, 2>& target, Tensor<float, 2> source, int startRow, int startCol) {
+    // Ensure the dimensions match
+    if (startRow + source.dimension(0) > target.dimension(0) || 
+        startCol + source.dimension(1) > target.dimension(1)) {
+            std::cout<<startRow + source.dimension(0)<<" "<<startCol + source.dimension(1)<<" "<<target.dimension(0)<<" "<<target.dimension(1)<<std::endl;
+        throw std::out_of_range("Source tensor exceeds target tensor dimensions.");
+    }
+
+    // Copy the source tensor into the target tensor at the specified position
+    for (int i = 0; i < source.dimension(0); ++i) {
+        for (int j = 0; j < source.dimension(1); ++j) {
+            target(startRow + i, startCol + j) = source(i, j);
+        }
+    }
+}
+
+Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize, bool bi) {
+    int length = tensor.dimension(0);
+    int batch_size = tensor.dimension(1);
+    int input_size = tensor.dimension(2);
+    
+    // Assert input tensor dimensions
+    assert(length > 0 && batch_size > 0 && input_size > 0 && "Input tensor dimensions must be positive.");
+
+    Tensor3dXf output(length, batch_size, HiddenSize); 
+    Tensor2dXf h_t(batch_size, HiddenSize); // Hidden State
+    Tensor2dXf c_t(batch_size, HiddenSize); // Cell State
+    Tensor2dXf h_t_increased(batch_size, HiddenSize + input_size);
+    
+    h_t.setZero();
+    c_t.setZero();
+    h_t_increased.setZero();
+    
+    Tensor2dXf W_f(HiddenSize, HiddenSize + input_size);
+    Tensor2dXf W_i(HiddenSize, HiddenSize + input_size);
+    Tensor2dXf W_c(HiddenSize, HiddenSize + input_size);
+    Tensor2dXf W_o(HiddenSize, HiddenSize + input_size);
+    Tensor2dXf b_f(HiddenSize, HiddenSize + input_size);
+    Tensor2dXf b_i(HiddenSize, HiddenSize + input_size);
+    Tensor2dXf b_c(HiddenSize, HiddenSize + input_size);
+    Tensor2dXf b_o(HiddenSize, HiddenSize + input_size);
+    
+    // Assert weight and bias dimensions
+    assert(W_f.dimension(0) == HiddenSize && W_f.dimension(1) == HiddenSize + input_size && "W_f dimensions are incorrect.");
+    assert(W_i.dimension(0) == HiddenSize && W_i.dimension(1) == HiddenSize + input_size && "W_i dimensions are incorrect.");
+    assert(W_c.dimension(0) == HiddenSize && W_c.dimension(1) == HiddenSize + input_size && "W_c dimensions are incorrect.");
+    assert(W_o.dimension(0) == HiddenSize && W_o.dimension(1) == HiddenSize + input_size && "W_o dimensions are incorrect.");
+    
+    // Initialize offset and extent for weights
+    std::array<long, 2> extent_weight{static_cast<long>(HiddenSize), static_cast<long>(HiddenSize)};
+    std::array<long, 2> offset_weight{0, 0};
+
+    // Set weights using the setSubmatrix function
+    ////////////////////////////////////////////////////
+    std::cout<<lstm_weight_ih.dimensions()<<" "<<HiddenSize<<" "<<input_size<<std::endl;
+    setSubmatrix(W_f, lstm_weight_ih.slice(offset_weight, extent_weight), HiddenSize, 0);
+    setSubmatrix(W_f, lstm_weight_hh.slice(offset_weight, extent_weight), 0, 0);
+    // offset_weight[0] += HiddenSize;
+
+    // setSubmatrix(W_i, lstm_weight_ih.slice(offset_weight, extent_weight), HiddenSize, 0);
+    // setSubmatrix(W_i, lstm_weight_hh.slice(offset_weight, extent_weight), 0, 0);
+    // offset_weight[0] += HiddenSize;
+
+    // setSubmatrix(W_c, lstm_weight_ih.slice(offset_weight, extent_weight), HiddenSize, 0);
+    // setSubmatrix(W_c, lstm_weight_hh.slice(offset_weight, extent_weight), 0, 0);
+    // offset_weight[0] += HiddenSize;
+
+    // setSubmatrix(W_o, lstm_weight_hh.slice(offset_weight, extent_weight), 0, 0);
+    // // Assert that the weights have been set correctly
+    // assert(W_f.dimension(0) == HiddenSize && W_f.dimension(1) == HiddenSize + input_size && "W_f dimensions are incorrect after setting.");
+    // assert(W_i.dimension(0) == HiddenSize && W_i.dimension(1) == HiddenSize + input_size && "W_i dimensions are incorrect after setting.");
+    // assert(W_c.dimension(0) == HiddenSize && W_c.dimension(1) == HiddenSize + input_size && "W_c dimensions are incorrect after setting.");
+    // assert(W_o.dimension(0) == HiddenSize && W_o.dimension(1) == HiddenSize + input_size && "W_o dimensions are incorrect after setting.");
+
+    // // Assert bias dimensions
+    // assert(b_f.dimension(0) == HiddenSize && b_f.dimension(1) == HiddenSize + input_size && "b_f dimensions are incorrect.");
+    // assert(b_i.dimension(0) == HiddenSize && b_i.dimension(1) == HiddenSize + input_size && "b_i dimensions are incorrect.");
+    // assert(b_c.dimension(0) == HiddenSize && b_c.dimension(1) == HiddenSize + input_size && "b_c dimensions are incorrect.");
+    // assert(b_o.dimension(0) == HiddenSize && b_o.dimension(1) == HiddenSize + input_size && "b_o dimensions are incorrect.");
+
+    // // Initialize offset and extent for biases
+    // std::array<long, 2> extent_bias{static_cast<long>(HiddenSize),1};
+    // std::array<long, 2> offset_bias{0,0};
+    // Tensor2dXf lstm_bias_ih_reshaped = lstm_bias_ih.reshape(std::array<long, 2>{static_cast<long>(lstm_bias_ih.size()), 1});
+    // Tensor2dXf lstm_bias_hh_reshaped = lstm_bias_hh.reshape(std::array<long, 2>{static_cast<long>(lstm_bias_hh.size()), 1});
+    // // Set biases using the setSubmatrix function
+    // for (int col = 0; col < HiddenSize; col++) {
+    //     setSubmatrix(b_f, lstm_bias_ih_reshaped.slice(offset_bias, extent_bias), HiddenSize, col);
+    //     setSubmatrix(b_f, lstm_bias_hh_reshaped.slice(offset_bias, extent_bias), 0, col);
+    //     offset_bias[0] += HiddenSize;
+
+    //     setSubmatrix(b_i, lstm_bias_ih_reshaped.slice(offset_bias, extent_bias), HiddenSize, col);
+    //     setSubmatrix(b_i, lstm_bias_hh_reshaped.slice(offset_bias, extent_bias), 0, col);
+    //     offset_bias[0] += HiddenSize;
+
+    //     setSubmatrix(b_c, lstm_bias_ih_reshaped.slice(offset_bias, extent_bias), HiddenSize, col);
+    //     setSubmatrix(b_c, lstm_bias_hh_reshaped.slice(offset_bias, extent_bias), 0, col);
+    //     offset_bias[0] += HiddenSize;
+
+    //     setSubmatrix(b_o, lstm_bias_ih_reshaped.slice(offset_bias, extent_bias), HiddenSize, col);
+    //     setSubmatrix(b_o, lstm_bias_hh_reshaped.slice(offset_bias, extent_bias), 0, col);
+    //     offset_bias[0] += HiddenSize;
+    // }
+
+    // Tensor2dXf f_t(HiddenSize, HiddenSize + input_size), i_t(HiddenSize, HiddenSize + input_size), o_t(HiddenSize, HiddenSize + input_size);
+    // f_t.setZero();
+    // i_t.setZero();
+    // o_t.setZero();
+    // auto tanh_func = [](float x) { return std::tanh(x); };
+    // auto sigmoid_func = [](float x) { return 1 / (1 + std::exp(-x)); };
+    // for (int t = 0; t < length; t++) {
+    //     setSubmatrix(h_t_increased, tensor.chip(t, 0), 0, HiddenSize); // Input at time t
+    //     setSubmatrix(h_t_increased, h_t, 0, 0); // Previous hidden state
+    //     f_t = (W_f.contract(h_t_increased, product_dims_reg) + b_f).unaryExpr(sigmoid_func);
+    //     i_t = (W_i.contract(h_t_increased, product_dims_reg) + b_i).unaryExpr(sigmoid_func);
+    //     c_t = f_t * c_t + i_t * (W_c.contract(h_t_increased, product_dims_reg) + b_c).unaryExpr(tanh_func);
+    //     o_t = (W_o.contract(h_t_increased, product_dims_reg) + b_o).unaryExpr(sigmoid_func);
+    //     h_t = o_t * c_t.unaryExpr(tanh_func);
+    //     output.chip(t, 0) = h_t; 
+    //   }
+      return output; 
+  }
+
+
+
+
+  
+
+typedef Tensor<std::complex<float>, 3> Tensor3dXcf;
+typedef std::variant<
+        Tensor3dXh,
+        Tensor3dXch,
+        Tensor1dXh,
+        Tensor4dXh,
+        VectorXh,
+        MatrixXh,
+        Tensor4dXf,
+        Tensor3dXf,
+        Tensor2dXf,
+        Tensor1dXf,
+        Tensor3dXcf
+    > VariantTensor;  //v
+} 
+template<typename T, int N>
+// void print_eigen_tensor(const Eigen::Tensor<T, N>& tensor, const std::array<int, N>& indices = {}) {
+//     // Base case: if we are at the last dimension, print the elements
+//     if constexpr (N == 1) {
+//         std::cout << "Tensor elements: ";
+//         for (std::size_t i = 0; i < tensor.dimension(0); ++i) {
+//             std::cout << tensor(indices[0] + i) << " ";
+//         }
+//         std::cout << std::endl;
+//     } else {
+//         // Recursive case: iterate over the current dimension
+//         for (std::size_t i = 0; i < tensor.dimension(0); ++i) {
+//             // Create a new index array for the next dimension
+//             std::array<int, N - 1> new_indices; // Create an array of size N-1
+//             for (int j = 1; j < N; ++j) {
+//                 new_indices[j - 1] = indices[j]; // Copy the indices from the original array
+//             }
+//             new_indices[0] = i; // Set the current index
+
+//             // Create a new tensor from the chipping operation
+//             Eigen::Tensor<T, N - 1> sub_tensor = tensor.chip(i, 0); // This creates a TensorChippingOp
+//             print_eigen_tensor(sub_tensor, new_indices); // Pass the sub_tensor directly
+//         }
+//     }
+// }
+
+
+#include "load_model.h"
+#include <cassert>
+#include <torch/script.h> 
+#include "tensors.h"
+#include <cassert>
+using namespace Eigen;
+Tensor1dXf load_vector(const torch::jit::script::Module& module){
+    assert(module.children().size()>=1);
+    auto first_child=(*module.named_children().begin()).value.named_parameters();
+    Tensor1dXf vector(first_child.size());
+    size_t counter=0;
+    for (const auto& param : first_child) {
+        vector(counter++)=param.value.item<float>();
+    }
+    return vector;
+}
+
+
+
+
+#include "tests.h"
+#include "tensors.h"
+#include <ATen/core/TensorBody.h>
+#include <chrono>
+
+using namespace Eigen;
+Tensor1dXf TorchToEigen(const torch::Tensor& tensor){
+    Tensor1dXf eigen_tensor(tensor.dim());
+    for(size_t i=0;i<tensor.dim();i++){
+        eigen_tensor(i)=tensor[i].item<float>();
+    }
+    return eigen_tensor;
+}
+// Tensor2dXf JitToEigen(torch::jit::script::Module tensor){
+//     std::vector<int64_t> dimensions = tensor.sizes().vec();
+//     for (const auto& child : module.named_children()) {
+//         std::cout << "Layer: " << child.name << ", Type: " << child.value.type()->str() << std::endl;
+//         for (const auto& param : child.value.named_parameters()) {
+//             std::cout << "  Param: " << param.name << ", Shape: " << param.value.sizes() << std::endl;
+//             std::cout << "    Weights: " << param.value << std::endl;
+//         }
+//         print_model_layers(child.value);
+//     }
+// }
+//maybe create converter class for seversl dimensions(if I do it with templates than to long and I dont want to use recursion)
+//create time wrapper
+void TestSimpleModel(){
+    std::string base_path = "/home/torfinhell/Denoiser.cpp/tests/test_data/SimpleModel";
+    std::string input_path=base_path+"/input.pth";
+    std::string model_path=base_path+"/model.pth";
+    std::string prediction_path=base_path+"/prediction.pth";
+    torch::jit::script::Module prior_input, model, prior_prediction;
+    torch::Tensor input_tensors, prediction_tensors;
+    try {
+        model = torch::jit::load(model_path);
+        prior_input = torch::jit::load(input_path);
+        prior_prediction = torch::jit::load(prediction_path);
+        input_tensors = prior_input.attr("prior").toTensor();
+        prediction_tensors = prior_prediction.attr("prior").toTensor();
+        std::cout << "Model loaded successfully\n";
+    } catch (const c10::Error& e) {
+        std::cerr << "Error loading the model: " << e.what() << "\n";
+    }
+    print_tensor(input_tensors);
+    print_model_layers(model);
+    auto start = std::chrono::high_resolution_clock::now();
+    print_tensor(prediction_tensors);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+    std::cout << "Time taken for forward pass: " << duration.count() << " ms" << std::endl;
+    // Tensor2dXf weights=JitToEigen(model);
+    start = std::chrono::high_resolution_clock::now();
+    model.forward({input_tensors}).toTensor();
+    end = std::chrono::high_resolution_clock::now();
+    duration = end - start;
+    std::cout << "Time taken for forward pass: " << duration.count() << " ms" << std::endl;
+
+    Eigen::MatrixXd weight(2, 10);
+    weight << -0.0697, -0.1289, -0.1705,  0.2072,  0.3073, -0.2763, -0.0724, -0.2576, 0.1368, 0.2347,
+               0.1622, -0.0272,  0.3017,  0.0532,  0.2130, -0.0723, -0.0887,  0.0306, 0.1020, -0.1697;
+
+    // Define the bias vector (2)
+    Eigen::VectorXd bias(2);
+    bias << 6.1365, -30.7464;
+
+    // Define the input matrix (1x10) for a single sample
+    Eigen::RowVectorXd input(10);
+    input << -0.119387, -0.277944, 0, 0, 0, 0, 0, 0, 0, 0; // Example input
+    start = std::chrono::high_resolution_clock::now();
+    // Perform the matrix multiplication and add the bias
+    Eigen::VectorXd output = (weight * input.transpose()) + bias;
+    end = std::chrono::high_resolution_clock::now();
+    duration = end - start;
+    std::cout << "Time taken for forward pass: " << duration.count() << " ms" << std::endl;
+    std::cout << "Output: " << output.transpose() << std::endl;
+    // Print the output
+
+}
+
+void print_model_layers(const torch::jit::script::Module& module) {
+    for (const auto& child : module.named_children()) {
+        std::cout << "Layer: " << child.name << ", Type: " << child.value.type()->str() << std::endl;
+        for (const auto& param : child.value.named_parameters()) {
+            std::cout << "  Param: " << param.name << ", Shape: " << param.value.sizes() << std::endl;
+            std::cout << "    Weights: " << param.value << std::endl;
+        }
+        print_model_layers(child.value);
+    }
+}
+void print_tensor(const torch::Tensor& tensor) {
+    if (tensor.dim() == 0) {
+        std::cout << tensor.item<float>() << std::endl; 
+        return;
+    }
+    std::cout << "Tensor shape: ";
+    for (int64_t i = 0; i < tensor.dim(); ++i) {
+        std::cout << tensor.size(i) << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "Tensor elements: ";
+    for (int64_t i = 0; i < tensor.numel(); ++i) {
+        std::cout << tensor[i].item<float>() << " "; 
+    }
+    std::cout << std::endl;
+}

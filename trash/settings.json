@@ -1,0 +1,11 @@
+{
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "clangd.path": "/usr/local/bin/clangd",  // Update this to your clangd path
+    "clangd.arguments": [
+        "-log=verbose",
+        "-pretty",
+        "--background-index",
+        "--query-driver=/bin/arm-buildroot-linux-gnueabihf-g++", // Uncomment and set this for cross-compilation
+        "--compile-commands-dir=/path/to/your/compile_commands_dir/" // Update this to your compile commands directory
+    ]
+}
