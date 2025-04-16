@@ -14,6 +14,10 @@ Implemented from [Denoiser Paper](https://arxiv.org/pdf/2006.12847) [Denoiser Im
 
 ### Install Python dependencies
 ```bash
+sudo apt update
+sudo apt install python3 python3-venv python3-pip
+python3 -m venv env
+source env/bin/activate
 pip install torch numpy
 ```
 ### LINUX SETUP

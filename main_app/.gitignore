@@ -49,3 +49,4 @@ build/data.txt
 !CMakeLists.txt
 !sources/CMakeLists.txt
 vendor
+TestDenoiser
