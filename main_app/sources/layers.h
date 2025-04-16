@@ -1,15 +1,8 @@
 #pragma once
 #include "tensors.h"
-#include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <torch/script.h>
-
 #include <vector>
-#define EIGEN_USE_MKL_ALL
-#define EIGEN_USE_BLAS
-#define EIGEN_VECTORIZE_SSE4_2
-#define PI 3.141592653589793
 
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg;
 extern Eigen::array<Eigen::IndexPair<int>, 1> product_dims_sec_transposed;
@@ -37,7 +30,7 @@ void WriteTensor(EigenTensor &tensor, std::ofstream &outputstream,
         outputstream << tensor(indices) << " ";
     }
     else {
-        for (long long i = 0; i < tensor.dimension(current_pos); i++) {
+        for (int64_t i = 0; i < tensor.dimension(current_pos); i++) {
             indices[current_pos] = i;
             WriteTensor<EigenTensor, NumDim>(tensor, outputstream, indices,
                                              current_pos + 1);
@@ -60,7 +53,7 @@ void ReadTensor(EigenTensor &tensor, std::ifstream &inputstream,
         inputstream >> tensor(indices);
     }
     else {
-        for (long long i = 0; i < tensor.dimension(current_pos); i++) {
+        for (int64_t i = 0; i < tensor.dimension(current_pos); i++) {
             indices[current_pos] = i;
             ReadTensor<EigenTensor, NumDim>(tensor, inputstream, indices,
                                             current_pos + 1);
@@ -131,6 +124,7 @@ struct OneEncoder {
     OneEncoder(int hidden = 48, int ch_scale = 2, int kernel_size = 8,
                int stride = 4, int chout = 1, int chin = 1);
 };
+
 
 struct OneDecoder {
     Tensor3dXf forward(Tensor3dXf tensor);

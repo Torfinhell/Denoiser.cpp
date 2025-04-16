@@ -57,7 +57,7 @@ void TestSimpleModel()
         assert(input_tensors.dim() == 1 && "Input tensor must be 1D");
         assert(prediction_tensors.dim() == 1 && "Prediction tensor must be 1D");
         Tensor1dXf input = TorchToEigen<Tensor1dXf, 1>(input_tensors);
-        Tensor1dXf prediction = TorchToEigen<Tensor1dXf, 1>(prediction_tensors);
+        Tensor1dXf prediction = TorchToEigen<Tensor1dXf, 1>(prediction_tensors.detach());
         SimpleModel simple_model, loaded_model;
 
         if (!simple_model.load_from_jit_module(model)) {
@@ -133,7 +133,7 @@ void TestOneEncoder()
         assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
         assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
-        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
+        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors.detach());
         OneEncoder one_encoder_model, loaded_model;
         if (!one_encoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
@@ -211,7 +211,7 @@ void TestSimpleEncoderDecoder()
         assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
         assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
-        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
+        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors.detach());
         SimpleEncoderDecoder simple_encoder_decoder_model, loaded_model;
         if (!simple_encoder_decoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
@@ -291,7 +291,7 @@ void TestSimpleEncoderDecoderLSTM()
         assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
         assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
-        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
+        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors.detach());
         SimpleEncoderDecoderLSTM simple_encoder_decoder_model, loaded_model;
         if (!simple_encoder_decoder_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
@@ -361,7 +361,7 @@ void TestDNS48()
             prior_prediction = torch::jit::load(prediction_path);
             input_tensors = prior_input.attr("prior").toTensor();
             prediction_tensors = prior_prediction.attr("prior").toTensor();
-            std::cout << "DemucsModel Model loaded successfully" << std::endl;
+            std::cout << "DNS48 Model loaded successfully" << std::endl;
         }
         catch (const c10::Error &e) {
             throw std::runtime_error("Error loading the model: " +
@@ -370,7 +370,7 @@ void TestDNS48()
         assert(input_tensors.dim() == 3 && "Input tensor must be 3D");
         assert(prediction_tensors.dim() == 3 && "Prediction tensor must be 3D");
         Tensor3dXf input = TorchToEigen<Tensor3dXf, 3>(input_tensors);
-        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors);
+        Tensor3dXf prediction = TorchToEigen<Tensor3dXf, 3>(prediction_tensors.detach()); 
         DemucsModel demucs_model, loaded_model;
         if (!demucs_model.load_from_jit_module(model)) {
             throw std::runtime_error("Couldn't load model from jit.\n");
@@ -551,7 +551,7 @@ void GenerateTestsforAudio()
                         Tensor2dXf resampled_ans = WriteAudioFromFile(
                             output_file_path, ans, &sample_rate);
                         Tensor2dXf resampled_clean_wav = WriteAudioFromFile(
-                            output_file_path, clean_wav, &sample_rate);
+                            debug_file_path, clean_wav, &sample_rate);
                         mean_rtf += static_cast<double>(duration) /
                                     (1000.0 * length_in_seconds);
                         float sdr =

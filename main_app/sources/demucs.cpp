@@ -50,10 +50,10 @@ Tensor3dXf DemucsModel::DecoderWorker(Tensor3dXf mix)
 
 Tensor3dXf DemucsModel::LSTMWorker(Tensor3dXf mix)
 {
-    auto res1 = lstm1.forward(mix.shuffle(std::array<long long, 3>{2, 0, 1}),
+    auto res1 = lstm1.forward(mix.shuffle(std::array<int64_t, 3>{2, 0, 1}),
                               lstm_hidden, lstm_state1);
     auto res2 = lstm2.forward(res1, lstm_hidden, lstm_state2);
-    auto res3 = res2.shuffle(std::array<long long, 3>{1, 2, 0});
+    auto res3 = res2.shuffle(std::array<int64_t, 3>{1, 2, 0});
     return res3;
 }
 

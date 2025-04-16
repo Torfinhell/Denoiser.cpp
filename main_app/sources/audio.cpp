@@ -34,10 +34,10 @@ Tensor2dXf ReadAudioFromFile(fs::path file_name, int *sample_rate,
         throw std::invalid_argument(
             "demucs_mt.cpp only supports mono  audio");
     }
-    long long N = fileData->samples.size() / fileData->channelCount;
+    int64_t N = fileData->samples.size() / fileData->channelCount;
     Tensor2dXf ret(1, N);
     if (fileData->channelCount == 1) {
-        for (long long i = 0; i < N; ++i) {
+        for (int64_t i = 0; i < N; ++i) {
             ret(0, i) = fileData->samples[i];
         }
     }
@@ -64,7 +64,7 @@ Tensor2dXf WriteAudioFromFile(fs::path file_name, Tensor2dXf wav,
 
     fileData->channelCount = 1;
     fileData->samples.resize(wav.dimension(1));
-    for (long long i = 0; i < wav.dimension(1); ++i) {
+    for (int64_t i = 0; i < wav.dimension(1); ++i) {
         fileData->samples[i] = wav(0, i);
     }
     int encoderStatus =
@@ -100,16 +100,16 @@ float hanning_func(int n, int N)
 {
     return 0.5f * (1.0f - std::cos(2.0f * M_PI * float(n) / float(N - 1)));
 }
-Tensor1dXf compute_hanning_window(long long const p_window_size)
+Tensor1dXf compute_hanning_window(int64_t const p_window_size)
 {
     Tensor1dXf window(p_window_size);
-    for (long long i = 0; i < p_window_size; ++i)
+    for (int64_t i = 0; i < p_window_size; ++i)
         window[i] = hanning_func(i, p_window_size);
     return window;
 }
-Tensor1dXf compute_polyphase_filter_bank(long long upsampling_factor,
-                                         long long downsampling_factor,
-                                         long long filter_size)
+Tensor1dXf compute_polyphase_filter_bank(int64_t upsampling_factor,
+                                         int64_t downsampling_factor,
+                                         int64_t filter_size)
 {
     Tensor1dXf window = compute_hanning_window(filter_size * upsampling_factor);
 
@@ -117,17 +117,17 @@ Tensor1dXf compute_polyphase_filter_bank(long long upsampling_factor,
     float scale_factor =
         float(std::max(downsampling_factor, upsampling_factor));
 
-    long long num_filters = upsampling_factor;
-    long long num_filter_taps = window.size() / num_filters;
+    int64_t num_filters = upsampling_factor;
+    int64_t num_filter_taps = window.size() / num_filters;
 
-    for (long long i = 0; i < window.size(); ++i) {
+    for (int64_t i = 0; i < window.size(); ++i) {
 
         float t = int(i) - int(window.size() / 2);
         float f = sinc(t / scale_factor);
 
-        long long polyphase_filter_index = i % num_filters;
-        long long offset_in_polyphase_filter = i / num_filters;
-        long long filter_array_idx =
+        int64_t polyphase_filter_index = i % num_filters;
+        int64_t offset_in_polyphase_filter = i / num_filters;
+        int64_t filter_array_idx =
             polyphase_filter_index * num_filter_taps +
             offset_in_polyphase_filter;
         filter[filter_array_idx] = f * window[i];
@@ -146,26 +146,26 @@ Tensor2dXf ResampleAudio(Tensor2dXf big_wav, int input_sample_rate,
 {
     Tensor1dXf wav = big_wav.chip(0, 0);
     const int filter_size = 16;
-    long long sample_rate_lcm = std::lcm(input_sample_rate, output_sample_rate);
-    long long upsampling_factor = sample_rate_lcm / input_sample_rate;
-    long long downsampling_factor = sample_rate_lcm / output_sample_rate;
+    int64_t sample_rate_lcm = std::lcm(input_sample_rate, output_sample_rate);
+    int64_t upsampling_factor = sample_rate_lcm / input_sample_rate;
+    int64_t downsampling_factor = sample_rate_lcm / output_sample_rate;
     Tensor1dXf polyphase_filter_bank = compute_polyphase_filter_bank(
         upsampling_factor, downsampling_factor, filter_size);
 
-    long long output_size =
+    int64_t output_size =
         (wav.size() * upsampling_factor + downsampling_factor - 1) /
         downsampling_factor;
     Tensor2dXf output_wav(1, output_size);
     output_wav.setZero();
-    long long num_polyphase_filters = upsampling_factor;
+    int64_t num_polyphase_filters = upsampling_factor;
     long polyphase_filter_size =
         polyphase_filter_bank.size() / num_polyphase_filters;
 
-    long long max_output_position =
+    int64_t max_output_position =
         ((wav.size() - polyphase_filter_size) * upsampling_factor) /
         downsampling_factor;
 
-    for (long long output_position = 0, interpolated_position = 0;
+    for (int64_t output_position = 0, interpolated_position = 0;
          output_position < max_output_position;
          output_position++, interpolated_position += downsampling_factor) {
         long polyphase_filter_index =

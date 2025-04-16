@@ -34,7 +34,6 @@
 venv
 __pycache__
 models
-vendor
 output
 bashrc
 build
@@ -46,8 +45,6 @@ compile_flags.txt
 tests/test_data/
 .clang-format
 build/data.txt
-libtorch*
 .venv
 !CMakeLists.txt
 !sources/CMakeLists.txt
-libnyquist

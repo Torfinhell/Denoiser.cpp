@@ -1,4 +1,5 @@
 #include "coders.h"
+#include <iostream>
 bool SimpleModel::load_from_jit_module(const torch::jit::script::Module &module)
 {
     try {
@@ -116,13 +117,14 @@ bool SimpleEncoderDecoder::IsEqual(const SimpleEncoderDecoder &other,
 
 Tensor3dXf SimpleEncoderDecoderLSTM::forward(Tensor3dXf tensor)
 {
-    LstmState lstm_state;
+    LstmState lstm_state1, lstm_state2;
+    
     auto res1 = one_encoder.forward(tensor);
-    auto res2 = lstm1.forward(res1.shuffle(std::array<long long, 3>{2, 0, 1}),
-                              hidden, lstm_state);
-    auto res3 = lstm2.forward(res2, hidden, lstm_state);
+    auto res2 = lstm1.forward(res1.shuffle(std::array<int64_t, 3>{2, 0, 1}),
+                              hidden, lstm_state1);
+    auto res3 = lstm2.forward(res2, hidden, lstm_state2);
     auto res4 =
-        one_decoder.forward(res3.shuffle(std::array<long long, 3>{1, 2, 0}));
+        one_decoder.forward(res3.shuffle(std::array<int64_t, 3>{1, 2, 0}));
     return res4;
 }
 

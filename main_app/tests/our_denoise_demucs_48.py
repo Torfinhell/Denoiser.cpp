@@ -203,12 +203,9 @@ class Demucs(nn.Module):
         if mix.dim() == 2:
             mix = mix.unsqueeze(1)
 
-        # if self.normalize:
         mono = mix.mean(dim=1, keepdim=True)
-        std = mono.std(dim=-1, keepdim=True)
+        std = mono.std(dim=-1, keepdim=True).detach()
         mix = mix / (self.floor + std)
-        # else:
-        # std = 1
         length = mix.shape[-1]
         x = mix
         x = F.pad(x, (0, self.valid_length(length) - length))

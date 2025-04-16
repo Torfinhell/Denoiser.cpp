@@ -33,8 +33,8 @@ EigenTensor TorchToEigen(const torch::Tensor &torch_tensor)
     }
     EigenTensor eigen_tensor(dimensions);
     std::array<long, NumDim> indices;
-    for (long long i = 0; i < torch_tensor.numel(); ++i) {
-        long long linear_index = i;
+    for (int64_t i = 0; i < torch_tensor.numel(); ++i) {
+        int64_t linear_index = i;
         for (int d = NumDim - 1; d >= 0; --d) {
             indices[d] = linear_index % dimensions[d];
             linear_index /= dimensions[d];
@@ -52,14 +52,14 @@ void print_tensor(const Tensor &tensor, std::array<long, NumDim> &indices,
                   int current_pos = 0)
 {
     if constexpr (NumDim == 1) {
-        for (long long i = 0; i < tensor.size(); i++) {
+        for (int64_t i = 0; i < tensor.size(); i++) {
             std::cout << tensor(i) << " ";
         }
         std::cout << std::endl;
     }
     else if constexpr (NumDim == 2) {
-        for (long long i = 0; i < tensor.dimension(0); i++) {
-            for (long long j = 0; j < tensor.dimension(1); j++) {
+        for (int64_t i = 0; i < tensor.dimension(0); i++) {
+            for (int64_t j = 0; j < tensor.dimension(1); j++) {
                 std::cout << tensor(i, j) << " ";
             }
             std::cout << std::endl;
@@ -68,13 +68,13 @@ void print_tensor(const Tensor &tensor, std::array<long, NumDim> &indices,
     else {
         if (current_pos == NumDim - 2) {
             std::cout << "(";
-            for (long long i = 0; i < tensor.rank() - 2; i++) {
+            for (int64_t i = 0; i < tensor.rank() - 2; i++) {
                 std::cout << indices[i];
                 std::cout << ",";
             }
             std::cout << "): \n";
-            for (long long i = 0; i < tensor.dimension(tensor.rank() - 2); i++) {
-                for (long long j = 0; j < tensor.dimension(tensor.rank() - 1);
+            for (int64_t i = 0; i < tensor.dimension(tensor.rank() - 2); i++) {
+                for (int64_t j = 0; j < tensor.dimension(tensor.rank() - 1);
                      j++) {
                     indices[tensor.rank() - 2] = i;
                     indices[tensor.rank() - 1] = j;
@@ -84,7 +84,7 @@ void print_tensor(const Tensor &tensor, std::array<long, NumDim> &indices,
             }
         }
         else {
-            for (long long i = 0; i < tensor.dimension(current_pos); i++) {
+            for (int64_t i = 0; i < tensor.dimension(current_pos); i++) {
                 indices[current_pos] = i;
                 print_tensor<Tensor, NumDim>(tensor, indices, current_pos + 1);
             }

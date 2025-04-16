@@ -1,5 +1,6 @@
 #include "coders.h"
 #include "layers.h"
+#include <array>
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_reg = {
     Eigen::IndexPair<int>(1, 0)};
 Eigen::array<Eigen::IndexPair<int>, 1> product_dims_sec_transposed = {
@@ -125,10 +126,10 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
             conv_weights, Eigen::array<Eigen::IndexPair<int>, 1>{
                               {Eigen::IndexPair<int>(1, 1)}});
         Tensor3dXf ans =
-            newtensor.shuffle(std::array<long long, 4>{3, 0, 2, 1}).chip(0, 0);
+            newtensor.shuffle(std::array<int64_t, 4>{3, 0, 2, 1}).chip(0, 0);
         Tensor3dXf bias_tensor =
-            conv_bias.reshape(std::array<long long, 3>{1, OutputChannels, 1})
-                .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
+            conv_bias.reshape(std::array<int64_t, 3>{1, OutputChannels, 1})
+                .broadcast(std::array<int64_t, 3>{batch_size, 1, new_length});
 
         return ans + bias_tensor;
     }
@@ -139,13 +140,13 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
                           tensor.dimension(2));
     big_tensor.chip(0, 0) = tensor;
     Tensor4dXf big_tensor_shuffled =
-        big_tensor.shuffle(std::array<long long, 4>{1, 2, 3, 0});
+        big_tensor.shuffle(std::array<int64_t, 4>{1, 2, 3, 0});
     big_tensor = big_tensor_shuffled;
     Tensor5dXf extracted_images = big_tensor.extract_image_patches(
         InputChannels, kernel_size, InputChannels, stride, 1, 1,
         Eigen::PaddingType::PADDING_VALID);
     Tensor5dXf extracted_images_shuffle =
-        extracted_images.shuffle(std::array<long long, 5>{4, 0, 1, 2, 3});
+        extracted_images.shuffle(std::array<int64_t, 5>{4, 0, 1, 2, 3});
     Tensor4dXf get_patches = extracted_images_shuffle.chip(0, 0);
     Tensor3dXf output_tensor(OutputChannels, batch_size, new_length);
     output_tensor = conv_weights.contract(
@@ -153,10 +154,10 @@ Tensor3dXf Conv1D::forward(Tensor3dXf tensor, int InputChannels,
         Eigen::array<Eigen::IndexPair<int>, 2>{
             {Eigen::IndexPair<int>(1, 1), Eigen::IndexPair<int>(2, 2)}});
     Tensor3dXf bias_tensor =
-        conv_bias.reshape(std::array<long long, 3>{OutputChannels, 1, 1})
-            .broadcast(std::array<long long, 3>{1, batch_size, new_length});
+        conv_bias.reshape(std::array<int64_t, 3>{OutputChannels, 1, 1})
+            .broadcast(std::array<int64_t, 3>{1, batch_size, new_length});
     output_tensor += bias_tensor;
-    return output_tensor.shuffle(std::array<long long, 3>{1, 0, 2});
+    return output_tensor.shuffle(std::array<int64_t, 3>{1, 0, 2});
 }
 bool Conv1D::load_from_jit_module(const torch::jit::script::Module &module,
                                   std::string weights_index = "0.0")
@@ -351,7 +352,7 @@ Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
             stride_kernel, Eigen::array<Eigen::IndexPair<int>, 1>{
                                {Eigen::IndexPair<int>(1, 0)}});
         Tensor4dXf other_tensor =
-            newtensor.shuffle(std::array<long long, 4>{0, 2, 3, 1});
+            newtensor.shuffle(std::array<int64_t, 4>{0, 2, 3, 1});
         Tensor3dXf res = other_tensor.reshape(std::array<long, 3>{
             batch_size, OutputChannels, new_length_for_stride});
         return res.pad(paddings);
@@ -364,7 +365,7 @@ Tensor3dXf ConvTranspose1d::forward(Tensor3dXf tensor, int InputChannels,
         func_get_ans(tensor, conv_tr_weights.slice(offset1, extent), stride, 0);
     output_tensor +=
         conv_tr_bias.reshape(std::array<long, 3>{1, OutputChannels, 1})
-            .broadcast(std::array<long long, 3>{batch_size, 1, new_length});
+            .broadcast(std::array<int64_t, 3>{batch_size, 1, new_length});
     return output_tensor;
 }
 
@@ -455,34 +456,24 @@ Tensor3dXf OneLSTM::forward(Tensor3dXf tensor, int HiddenSize,
         lstm_state.cell_state.setZero();
         lstm_state.is_created = true;
     }
-
-    auto ExtendColumn = [](Tensor2dXf column_weight,
-                           long columns_count) -> Tensor2dXf {
-        assert(column_weight.dimension(1) == 1);
-        Tensor2dXf new_column_weight(column_weight.dimension(0), columns_count);
-        for (long col = 0; col < columns_count; col++) {
-            new_column_weight.chip(col, 1) = column_weight.chip(0, 1);
-        }
-        return column_weight;
-    };
     auto tanh_func = [](float x) { return std::tanh(x); };
     auto sigmoid_func = [](float x) { return 1 / (1 + std::exp(-x)); };
-    // assert(lstm_weight_hh.dimension(0) == 4 * HiddenSize &&
-    //        lstm_weight_hh.dimension(1) == HiddenSize);
-    // assert(lstm_weight_ih.dimension(0) == 4 * HiddenSize &&
-    //        lstm_weight_ih.dimension(1) == input_size);
-    // assert(lstm_bias_ih.dimension(0) == 4 * HiddenSize &&
-    //        lstm_bias_ih.dimension(1) == 1);
-    // assert(lstm_bias_hh.dimension(0) == 4 * HiddenSize &&
-    //        lstm_bias_hh.dimension(1) == 1);
+    assert(lstm_weight_hh.dimension(0) == 4 * HiddenSize &&
+           lstm_weight_hh.dimension(1) == HiddenSize);
+    assert(lstm_weight_ih.dimension(0) == 4 * HiddenSize &&
+           lstm_weight_ih.dimension(1) == input_size);
+    assert(lstm_bias_ih.dimension(0) == 4 * HiddenSize &&
+           lstm_bias_ih.dimension(1) == 1);
+    assert(lstm_bias_hh.dimension(0) == 4 * HiddenSize &&
+           lstm_bias_hh.dimension(1) == 1);
     for (int t = 0; t < length; t++) {
         Tensor2dXf x_t = tensor.chip(t, 0); 
         Tensor2dXf combined_input =
             lstm_weight_ih.contract(x_t, product_dims_sec_transposed) +
-            ExtendColumn(lstm_bias_ih, batch_size);
+            lstm_bias_ih.broadcast(std::array<long, 2>{1, batch_size});
         Tensor2dXf combined_hidden =
             lstm_weight_hh.contract(lstm_state.hidden_state, product_dims_reg) +
-            ExtendColumn(lstm_bias_hh, batch_size);
+            lstm_bias_hh.broadcast(std::array<long, 2>{1, batch_size});
         Tensor2dXf gates = combined_input + combined_hidden;
         std::array<long, 2> offset = {0, 0};
         std::array<long, 2> extent = {HiddenSize, batch_size};

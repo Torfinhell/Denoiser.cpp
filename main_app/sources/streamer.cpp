@@ -3,6 +3,7 @@
 #include <Eigen/src/Core/Matrix.h>
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -32,9 +33,9 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
     Tensor3dXf big_wav(1, wav.dimension(0), wav.dimension(1));
     big_wav.chip(0, 0) = wav;
     std::vector<Tensor3dXf> buffer_audio;
-    long long frame_size = stride;
+    int64_t frame_size = stride;
 
-    for (long long i = 0; i < big_wav.dimension(2); i += frame_size) {
+    for (int64_t i = 0; i < big_wav.dimension(2); i += frame_size) {
         std::array<long, 3> offset = {0, 0, i};
         std::array<long, 3> extent = {1, big_wav.dimension(1),
                                       (frame_size < big_wav.dimension(2) - i)
@@ -42,13 +43,14 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
                                           : big_wav.dimension(2) - i};
         buffer_audio.push_back(big_wav.slice(offset, extent));
     }
-    std::vector<Tensor3dXf> encoders_result(buffer_audio.size());
-    std::vector<Tensor3dXf> lstm_result(buffer_audio.size());
-    std::vector<Tensor3dXf> decoders_result(buffer_audio.size());
-    for (int start_thread = 0; start_thread < buffer_audio.size();
+    int64_t buffer_audio_size=static_cast<int64_t>(buffer_audio.size());
+    std::vector<Tensor3dXf> encoders_result(buffer_audio_size);
+    std::vector<Tensor3dXf> lstm_result(buffer_audio_size);
+    std::vector<Tensor3dXf> decoders_result(buffer_audio_size);
+    for (int64_t start_thread = 0; start_thread < buffer_audio_size;
          start_thread += numThreads) {
-        for (int i = start_thread;
-             i < std::min(static_cast<int>(buffer_audio.size()),
+        for (int64_t i = start_thread;
+             i < std::min(buffer_audio_size,
                           start_thread + numThreads);
              i++) {
             threads_encoders.emplace_back([&, i]() {
@@ -60,8 +62,8 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
         for (auto &t : threads_encoders) {
             t.join();
         }
-        for (int i = start_thread;
-             i < std::min(static_cast<int>(buffer_audio.size()),
+        for (int64_t i = start_thread;
+             i < std::min(buffer_audio_size,
                           start_thread + numThreads);
              i++) {
             lstm_result[i] =
@@ -71,8 +73,8 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
             demucs_models[(i + 1) % numThreads].lstm_state2 =
                 demucs_models[i % numThreads].lstm_state2;
         }
-        for (int i = start_thread;
-             i < std::min(static_cast<int>(buffer_audio.size()),
+        for (int64_t i = start_thread;
+             i < std::min(buffer_audio_size,
                           start_thread + numThreads);
              i++) {
             threads_decoders.emplace_back([&, i]() {
@@ -87,9 +89,10 @@ Tensor2dXf DemucsStreamer::forward(Tensor2dXf wav)
         threads_encoders.clear();
     }
     Eigen::MatrixXf ret_audio;
-    for (int i = 0; i < decoders_result.size(); i++) {
-        int height = decoders_result[i].dimension(1);
-        int width = decoders_result[i].dimension(2);
+
+    for (int64_t i = 0; i < buffer_audio_size; i++) {
+        int64_t height = decoders_result[i].dimension(1);
+        int64_t width = decoders_result[i].dimension(2);
 
         Eigen::MatrixXf matrix = Eigen::Map<Eigen::MatrixXf>(
             decoders_result[i].data(), height, width);
