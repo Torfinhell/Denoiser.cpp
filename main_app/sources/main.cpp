@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
         fs::path model_path = base_path / "model.pth";
         if (!fs::exists(model_path)) {
             std::cerr << "Model path does not exist. Tru running "
-                         "tests/create_tests.py to create the model file";
+                         "tests/create_tests.py to create the model file"<<std::endl;
             return 1;
         }
         torch::jit::script::Module model;
@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
         }
         catch (const std::exception &e) {
             std::cerr << "Error: loading the model to data.txt: " +
-                             std::string(e.what());
+                             std::string(e.what())<<std::endl;
             return 1;
         }
     }

@@ -50,3 +50,4 @@ build/data.txt
 !sources/CMakeLists.txt
 vendor
 TestDenoiser
+*Zone.Identifier

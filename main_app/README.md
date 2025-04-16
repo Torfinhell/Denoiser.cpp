@@ -62,7 +62,13 @@ python tests/create_tests.py
 ## Run the denoiser:
 ### Linux/Windows Usage
 ```bash
-./build/denoiser input_dir/ output_dir/ 4096 10
+cd build
+./Denoiser.cpp input_dir/ output_dir/ 4096 10
+```
+ Example:
+```bash
+cd build
+./Denoiser.cpp ../dataset/noisy/ ../output
 ```
 ### Command Line Arguments:
 ```bash
