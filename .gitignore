@@ -25,7 +25,8 @@
 *.la
 *.a
 *.lib
-
+*sh
+*.txt
 # Executables
 *.exe
 *.out
@@ -36,3 +37,24 @@ build
 __pycache__
 trash
 tests
+=======
+venv
+__pycache__
+models
+output
+bashrc
+build
+.cache
+CMakeFiles
+.cmake
+trash
+compile_flags.txt
+tests/test_data/
+.clang-format
+build/data.txt
+.venv
+!CMakeLists.txt
+!sources/CMakeLists.txt
+vendor
+TestDenoiser
+*Zone.Identifier
