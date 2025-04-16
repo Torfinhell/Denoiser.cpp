@@ -1,88 +1,66 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+project(custom_ops)
 
-# Change to your project name
-project(SimpleJucePluginTemplate VERSION 0.0.1)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(Torch_DIR "vendor/libtorch/share/cmake/Torch/")
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_XCODE_GENERATE_SCHEME OFF)
-set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+find_package(Torch REQUIRED)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(Threads REQUIRED)
 
-# We're going to use CPM as our package manager to bring in JUCE
-# Check to see if we have CPM installed already.  Bring it in if we don't.
-set(CPM_DOWNLOAD_VERSION 0.34.0)
-set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
+file(GLOB ALL_SOURCES "sources/*.cpp")
+set(SOURCE_FILES "")
 
-if (NOT EXISTS ${CPM_DOWNLOAD_LOCATION})
-    message(STATUS "Downloading CPM.cmake to ${CPM_DOWNLOAD_LOCATION}")
-    file(DOWNLOAD https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake ${CPM_DOWNLOAD_LOCATION})
-endif ()
+foreach(SOURCE ${ALL_SOURCES})
+    string(REGEX MATCH "main\\.cpp$|main_test\\.cpp$" MATCH_RESULT "${SOURCE}")
+    if(NOT MATCH_RESULT)
+        list(APPEND SOURCE_FILES ${SOURCE})
+    endif()
+endforeach()
 
-include(${CPM_DOWNLOAD_LOCATION})
+file(GLOB SOURCES "sources/*.cpp")
+add_executable(Denoiser.cpp sources/main.cpp ${SOURCE_FILES})
 
-# Bring in JUCE locally
-CPMAddPackage(
-    NAME juce
-    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG origin/master
+target_compile_features(Denoiser.cpp PRIVATE cxx_std_17)
+
+target_compile_definitions(Denoiser.cpp PRIVATE
+    EIGEN_USE_THREADS
+    EIGEN_HAS_CXX11_ATOMIC
 )
 
-# Make sure you include any new source files here
-set(SourceFiles
-        juce_plugin/PluginEditor.cpp
-        juce_plugin/PluginEditor.h
-        juce_plugin/PluginProcessor.cpp
-        juce_plugin/PluginProcessor.h
+set(LIBNYQUIST_BUILD_EXAMPLE OFF CACHE BOOL "Disable libnyquist example" FORCE)
+add_subdirectory("vendor/libnyquist")
+
+target_include_directories(Denoiser.cpp PRIVATE 
+    ${EIGEN3_INCLUDE_DIRS}  
+    ${TORCH_INCLUDE_DIRS}  
+    "vendor/libnyquist/include"
 )
 
-
-juce_add_plugin(${PROJECT_NAME}
-        COMPANY_NAME theaudioprogrammer
-        IS_SYNTH FALSE
-        NEEDS_MIDI_INPUT FALSE
-        NEEDS_MIDI_OUTPUT FALSE
-        IS_MIDI_EFFECT FALSE
-        EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-        JUCE_VST3_CAN_REPLACE_VST2 FALSE
-        COPY_PLUGIN_AFTER_BUILD TRUE
-        PLUGIN_MANUFACTURER_CODE Tap1
-        PLUGIN_CODE Reg0
-        FORMATS VST3 AU Standalone
-        PRODUCT_NAME "TapPluginTemplate"        
+target_link_libraries(Denoiser.cpp PRIVATE
+    ${TORCH_LIBRARIES}
+    Eigen3::Eigen
+    Threads::Threads
+    libnyquist::libnyquist
 )
 
-# How we want our SourceFiles to appear in our IDE
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SourceFiles})
+set(CMAKE_CXX_FLAGS_DEBUG "-g -DEIGEN_FAST_MATH=0 -O0 -Wall -Wextra")
+set(CMAKE_CXX_FLAGS_RELEASE "-Ofast -march=native -ffast-math -DNDEBUG -funroll-loops -flto")
 
-# Make the SourceFiles buildable
-target_sources(${PROJECT_NAME} PRIVATE ${SourceFiles})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# These are some toggleable options from the JUCE CMake API
-target_compile_definitions(${PROJECT_NAME}
-    PUBLIC
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_VST3_CAN_REPLACE_VST2=0
+target_link_options(Denoiser.cpp PRIVATE
+    -flto
+    -fuse-ld=gold
 )
 
-# JUCE libraries to bring into our project
-target_link_libraries(${PROJECT_NAME}
-        PUBLIC
-        juce::juce_analytics
-        juce::juce_audio_basics
-        juce::juce_audio_devices
-        juce::juce_core
-        juce::juce_data_structures
-        juce::juce_graphics
-        juce::juce_gui_basics
-        juce::juce_gui_extra
-        juce::juce_audio_utils
-        juce::juce_dsp
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags
-        juce::juce_recommended_warning_flags
+enable_testing()
+file(GLOB TEST_SOURCES "tests/*.cpp")
+add_executable(Denoiser.cpp.test sources/main_test.cpp ${TEST_SOURCES} ${SOURCE_FILES})
+target_link_libraries(Denoiser.cpp.test PRIVATE
+    ${TORCH_LIBRARIES}
+    Eigen3::Eigen
+    Threads::Threads
+    libnyquist::libnyquist
 )
-
-
-add_subdirectory(main_app)
-target_link_libraries(${PROJECT_NAME} PRIVATE main_app)
