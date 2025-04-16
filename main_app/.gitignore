@@ -48,3 +48,4 @@ build/data.txt
 .venv
 !CMakeLists.txt
 !sources/CMakeLists.txt
+vendor
