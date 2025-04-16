@@ -27,15 +27,6 @@ git clone https://github.com/ddiakopoulos/libnyquist.git
 wget https://download.pytorch.org/libtorch/nightly/cpu/libtorch-shared-with-deps-latest.zip
 unzip libtorch-shared-with-deps-latest.zip
 ```
-### WINDOWS SETUP
-```bash
-mkdir vendor
-cd vendor
-git clone https://github.com/ddiakopoulos/libnyquist.git
-$url = "https://download.pytorch.org/libtorch/nightly/cpu/libtorch-win-shared-with-deps-latest.zip"
-Invoke-WebRequest -Uri $url -OutFile libtorch.zip
-Expand-Archive -Path libtorch.zip -DestinationPath .
-```
 ## BUILDING THE PROJECT
 ### LINUX BUILD
 ```bash
@@ -46,21 +37,13 @@ cmake .. -DCMAKE_PREFIX_PATH="../vendor/libtorch" \
          -DCMAKE_CXX_COMPILER=clang++
 make -j$(nproc)
 ```
-### WINDOWS BUILD
-```bash
-mkdir build
-cd build
-cmake .. -G "Visual Studio 16 2019" -A x64 `
-         -DCMAKE_PREFIX_PATH="$PWD\..\vendor\libtorch"
-cmake --build . --config Release
-```
 ## USAGE
 Generate test cases:
 ```bash
 python tests/create_tests.py
 ```
 ## Run the denoiser:
-### Linux/Windows Usage
+### Linux Usage
 ```bash
 cd build
 ./Denoiser.cpp input_dir/ output_dir/ 4096 10
